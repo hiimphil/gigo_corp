@@ -5,6 +5,6 @@ openai
 pillow
 requests
 tweepy
-atro_python
+atproto
 python-dotenv
 atproto
