@@ -1,0 +1,10 @@
+# requirements.txt
+
+streamlit
+openai
+pillow
+requests
+tweepy
+atro_python
+python-dotenv
+atproto
