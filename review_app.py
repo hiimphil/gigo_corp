@@ -103,19 +103,28 @@ st.session_state.current_script = st.text_area(
     value=st.session_state.current_script,
     height=150
 )
+# In review_app.py
+
+# --- Generate Comic Image Button ---
 if st.button("🖼️ Generate Carousel Comic Images", key="generate_carousel_button"):
     if not st.session_state.current_script or len(st.session_state.current_script.split('\n')) != 4:
         st.warning("Please select or edit a valid 4-line script.")
     else:
-        with st.spinner("Generating 5 comic images for carousel..."):
-            local_paths = comic_generator_module.generate_comic_from_script_text(st.session_state.current_script)
-        if local_paths and all(os.path.exists(p) for p in local_paths):
-            st.session_state.generated_comic_paths = local_paths
-            st.session_state.imgur_image_links = []
-            st.success("Carousel images generated successfully!")
-        else:
-            st.session_state.generated_comic_paths = []
-            st.error("Failed to generate carousel images. Check console for details.")
+        try: # --- ADD THIS TRY BLOCK ---
+            with st.spinner("Generating 5 comic images for carousel..."):
+                local_paths = comic_generator_module.generate_comic_from_script_text(st.session_state.current_script)
+            
+            if local_paths and all(os.path.exists(p) for p in local_paths):
+                st.session_state.generated_comic_paths = local_paths
+                st.session_state.imgur_image_links = [] 
+                st.success("Carousel images generated successfully!")
+            else:
+                st.session_state.generated_comic_paths = []
+                st.error("Failed to generate carousel images. Check console for details. It's possible the temporary files were not found.")
+
+        except Exception as e: # --- ADD THIS EXCEPT BLOCK ---
+            st.error("An unexpected error occurred during image generation!")
+            st.exception(e) # This will print the full traceback to the screen
 st.markdown("---")
 
 

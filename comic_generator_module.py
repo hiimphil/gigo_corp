@@ -141,14 +141,17 @@ def assemble_composite_image(panel_filenames, output_path):
         return False
 
 
+# Updated
+
 def generate_comic_from_script_text(comic_script_text):
-    # --- Add diagnostic prints at the very beginning ---
     print("--- DIAGNOSTICS ---")
     cwd = os.getcwd()
     print(f"Current Working Directory: {cwd}")
     print(f"Contents of CWD: {os.listdir('.')}")
     print(f"Checking for Images folder: Exists = {os.path.exists('Images')}")
+    if os.path.exists('Images'): print(f"Contents of Images: {os.listdir('Images')}")
     print(f"Checking for Fonts folder: Exists = {os.path.exists('Fonts')}")
+    if os.path.exists('Fonts'): print(f"Contents of Fonts: {os.listdir('Fonts')}")
     print("--- END DIAGNOSTICS ---")
 
     print("Starting carousel comic generation from script text...")
@@ -160,49 +163,36 @@ def generate_comic_from_script_text(comic_script_text):
     
     panel_details_list = [process_script_line(line) for line in script_lines]
     
-    with tempfile.TemporaryDirectory() as temp_dir:
-        print(f"Created temporary directory for outputs: {temp_dir}")
-        temp_panel_filenames = []
-        for i, panel_info_data in enumerate(panel_details_list):
-            temp_filename = create_panel_image(panel_info_data, i, temp_dir)
-            if not temp_filename:
-                print("Failed to create a temporary panel.")
-                return None
-            temp_panel_filenames.append(temp_filename)
-
-        if not temp_panel_filenames:
-             print("No panels were generated, returning None.")
-             return None
-
-        # This part of the logic needs to be inside the with block if it uses the temp files
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
-        output_paths = []
-
-        for i, temp_panel_path in enumerate(temp_panel_filenames):
-            full_size_path = os.path.join(temp_dir, f"{base_filename}_panel_{i+1}.png")
-            if not create_full_size_single_panel(temp_panel_path, full_size_path):
-                return None
-            output_paths.append(full_size_path)
-
-        composite_path = os.path.join(temp_dir, f"{base_filename}_composite.png")
-        if not assemble_composite_image(temp_panel_filenames, composite_path):
+    # --- MODIFICATION: Create a temp directory that is NOT automatically deleted ---
+    temp_dir = tempfile.mkdtemp()
+    print(f"Created persistent temporary directory for this session: {temp_dir}")
+    
+    temp_panel_filenames = []
+    for i, panel_info_data in enumerate(panel_details_list):
+        temp_filename = create_panel_image(panel_info_data, i, temp_dir)
+        if not temp_filename:
+            print("Failed to create a temporary panel.")
             return None
-        output_paths.append(composite_path)
-        
-        # We need to return the list of paths for the next step.
-        # But the temp directory will be deleted when the 'with' block exits.
-        # The solution is to create a more persistent temp dir or handle file uploads differently.
-        # For now, let's copy the final files to a list that can be returned.
-        # A better long-term solution would be to upload from memory.
-        # But for debugging, this will work.
-        
-        final_files_in_memory = []
-        for path in output_paths:
-            with open(path, "rb") as f:
-                final_files_in_memory.append(f.read())
-        
-        # This part of the code is not returning the files, which will be an issue later.
-        # For now, let's focus on generation. The error happens before this.
-        print(f"Carousel comic generation successful. {len(output_paths)} images created in temp dir.")
-        return output_paths # This will fail in the next step, but let's solve one problem at a time.
+        temp_panel_filenames.append(temp_filename)
+
+    if not temp_panel_filenames:
+            print("No panels were generated, returning None.")
+            return None
+
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
+    output_paths = []
+
+    for i, temp_panel_path in enumerate(temp_panel_filenames):
+        full_size_path = os.path.join(temp_dir, f"{base_filename}_panel_{i+1}.png")
+        if not create_full_size_single_panel(temp_panel_path, full_size_path):
+            return None
+        output_paths.append(full_size_path)
+
+    composite_path = os.path.join(temp_dir, f"{base_filename}_composite.png")
+    if not assemble_composite_image(temp_panel_filenames, composite_path):
+        return None
+    output_paths.append(composite_path)
+    
+    print(f"Carousel comic generation successful. {len(output_paths)} images created in temp dir.")
+    return output_paths
