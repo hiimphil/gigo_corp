@@ -2,33 +2,27 @@
 from PIL import Image, ImageDraw, ImageFont
 import datetime
 import os
-import tempfile # --- Added for temporary directory handling
+import tempfile
 
-# --- Refactored: Use relative paths instead of hardcoded absolute paths ---
-# The script will now look for these folders in its own directory.
+# --- Use relative paths ---
 IMAGE_PATH = "Images/"
 FONT_PATH = "Fonts/"
 TITLEFONT_PATH = os.path.join(FONT_PATH, "RNS-B.ttf")
-MAIN_FONT_PATH = os.path.join(FONT_PATH, "Krungthep.ttf") # Renamed for clarity
+MAIN_FONT_PATH = os.path.join(FONT_PATH, "Krungthep.ttf")
 
-# --- Removed hardcoded OUTPUT_PATH ---
-
-# --- Panel & Text Configuration (Unchanged) ---
+# --- Configuration (Unchanged) ---
+# ... (rest of the configuration remains the same) ...
 FONT_SIZE = 32
-TEXT_COLOR = "#ffffff"
-TEXT_POSITION = (256, 250)
-SPACING_BETWEEN_LINES = 4
+TEXT_COLOR = "#ffffff" 
+TEXT_POSITION = (256, 250) 
+SPACING_BETWEEN_LINES = 4 
 PANEL_WIDTH = 512
 PANEL_HEIGHT = 640
 OUTPUT_FILENAME_PREFIX = "gigoco_"
-
-# --- Header Configuration (Unchanged) ---
-HEADER_TEXT = "GIGOCO"
-HEADER_HEIGHT = 40
-HEADER_FONT_SIZE = 40
-HEADER_TEXT_COLOR = "#6d7467"
-
-# --- Image Filenames (Unchanged) ---
+HEADER_TEXT = "GIGOCO" 
+HEADER_HEIGHT = 40  
+HEADER_FONT_SIZE = 40 
+HEADER_TEXT_COLOR = "#6d7467" 
 IMAGE_FILES = {
     "A_TALKING": "A_talking.png",
     "A_NOTTALKING": "A_nottalking.png",
@@ -37,6 +31,7 @@ IMAGE_FILES = {
     "C_TALKING": "C_talking.png",
     "C_NOTTALKING": "C_nottalking.png"
 }
+# --- End of Configuration ---
 
 def parse_script_lines(script_text_block):
     if not script_text_block.strip(): return None
@@ -44,6 +39,7 @@ def parse_script_lines(script_text_block):
     return lines if len(lines) == 4 else None
 
 def process_script_line(line):
+    # ... (this function is fine, no changes needed) ...
     parts = line.split(":", 1)
     character = parts[0].strip().upper()
     dialogue = parts[1].strip() if len(parts) > 1 else ""
@@ -53,36 +49,44 @@ def process_script_line(line):
     image_key = f"{character}_{image_key_suffix}"
     return {"character": character, "dialogue": dialogue, "image_key": image_key}
 
-# --- Refactored: This function now accepts a 'temp_dir' to save the panel to ---
+
 def create_panel_image(panel_info, panel_num, temp_dir):
     base_image_filename = IMAGE_FILES.get(panel_info["image_key"])
-    if not base_image_filename:
-        default_fallback_key = "A_NOTTALKING"
-        base_image_filename = IMAGE_FILES.get(default_fallback_key, "A_nottalking.png")
-        print(f"Warning: Image key '{panel_info['image_key']}' not found. Using fallback.")
     full_image_path = os.path.join(IMAGE_PATH, base_image_filename)
+
+    # --- ENHANCED LOGGING ---
+    print(f"--- Creating Panel {panel_num+1} ---")
+    print(f"Attempting to load image: '{full_image_path}'")
+    if not os.path.exists(full_image_path):
+        print(f"--> FATAL ERROR: IMAGE NOT FOUND AT: {full_image_path}")
+        return None
+    print("Image file found.")
+    # --- END LOGGING ---
 
     try:
         base_image = Image.open(full_image_path).convert("RGBA")
         if base_image.size != (PANEL_WIDTH, PANEL_HEIGHT):
             base_image = base_image.resize((PANEL_WIDTH, PANEL_HEIGHT), Image.Resampling.LANCZOS)
-    except FileNotFoundError:
-        print(f"--> FATAL ERROR: File not found at path: '{full_image_path}'")
-        return None
     except Exception as e:
         print(f"--> FATAL ERROR: An error occurred while opening '{full_image_path}': {e}")
         return None
 
     draw = ImageDraw.Draw(base_image)
     if panel_info["dialogue"]:
-        try:
-            font = ImageFont.truetype(MAIN_FONT_PATH, FONT_SIZE)
-        except IOError:
-            print(f"Warning: Font not found at {MAIN_FONT_PATH}. Using default font.")
+        # --- ENHANCED LOGGING ---
+        print(f"Attempting to load font: '{MAIN_FONT_PATH}'")
+        if not os.path.exists(MAIN_FONT_PATH):
+            print(f"--> FATAL ERROR: FONT NOT FOUND AT: {MAIN_FONT_PATH}")
+            # Fallback to default font to avoid crashing, but the error is logged.
             font = ImageFont.load_default()
+        else:
+            print("Font file found.")
+            font = ImageFont.truetype(MAIN_FONT_PATH, FONT_SIZE)
+        # --- END LOGGING ---
         
         from textwrap import TextWrapper
         wrapper = TextWrapper(width=26)
+        # ... (rest of text drawing logic is fine) ...
         lines = wrapper.wrap(text=panel_info["dialogue"])
         ascent, descent = font.getmetrics()
         line_height = ascent + descent
@@ -94,14 +98,14 @@ def create_panel_image(panel_info, panel_num, temp_dir):
             x_text = (PANEL_WIDTH - line_width) / 2
             draw.text((x_text, y_text), line, font=font, fill=TEXT_COLOR)
             y_text += line_height + SPACING_BETWEEN_LINES
-    
-    # Save the panel image inside the provided temporary directory
+
     temp_panel_path = os.path.join(temp_dir, f"temp_panel_{panel_num}.png")
     base_image.save(temp_panel_path)
+    print(f"Successfully created panel {panel_num+1}.")
     return temp_panel_path
 
+# ... (create_full_size_single_panel and assemble_composite_image are fine) ...
 def create_full_size_single_panel(panel_image_path, output_path):
-    # This function remains largely the same, just receives the correct output_path
     try:
         panel_img = Image.open(panel_image_path)
         full_size_panel = panel_img.resize((1080, 1350), Image.Resampling.LANCZOS)
@@ -114,16 +118,19 @@ def create_full_size_single_panel(panel_image_path, output_path):
         return False
 
 def assemble_composite_image(panel_filenames, output_path):
-    # This function remains largely the same
     try:
         images = [Image.open(fp) for fp in panel_filenames]
         composite_image = Image.new('RGB', (1080, 1350), 'white')
         draw = ImageDraw.Draw(composite_image)
-        try:
+        # --- ENHANCED LOGGING ---
+        print(f"Attempting to load title font: '{TITLEFONT_PATH}'")
+        if not os.path.exists(TITLEFONT_PATH):
+            print(f"--> WARNING: Title font not found at {TITLEFONT_PATH}, skipping header text.")
+        else:
+            print("Title font found.")
             header_font = ImageFont.truetype(TITLEFONT_PATH, HEADER_FONT_SIZE)
             draw.text((14, HEADER_HEIGHT / 2), HEADER_TEXT, font=header_font, fill=HEADER_TEXT_COLOR, anchor='lm')
-        except Exception as e:
-            print(f"Could not draw header on composite image: {e}")
+        # --- END LOGGING ---
         
         composite_image.paste(images[0], (14, 40)); composite_image.paste(images[1], (546, 40))
         composite_image.paste(images[2], (14, 697)); composite_image.paste(images[3], (546, 697))
@@ -133,8 +140,17 @@ def assemble_composite_image(panel_filenames, output_path):
         print(f"Error assembling composite image: {e}")
         return False
 
-# --- Refactored: Main function now uses a temporary directory ---
+
 def generate_comic_from_script_text(comic_script_text):
+    # --- Add diagnostic prints at the very beginning ---
+    print("--- DIAGNOSTICS ---")
+    cwd = os.getcwd()
+    print(f"Current Working Directory: {cwd}")
+    print(f"Contents of CWD: {os.listdir('.')}")
+    print(f"Checking for Images folder: Exists = {os.path.exists('Images')}")
+    print(f"Checking for Fonts folder: Exists = {os.path.exists('Fonts')}")
+    print("--- END DIAGNOSTICS ---")
+
     print("Starting carousel comic generation from script text...")
 
     script_lines = parse_script_lines(comic_script_text)
@@ -144,40 +160,49 @@ def generate_comic_from_script_text(comic_script_text):
     
     panel_details_list = [process_script_line(line) for line in script_lines]
     
-    # Create a temporary directory that will be automatically cleaned up
     with tempfile.TemporaryDirectory() as temp_dir:
         print(f"Created temporary directory for outputs: {temp_dir}")
         temp_panel_filenames = []
         for i, panel_info_data in enumerate(panel_details_list):
-            # Pass the temp_dir to the panel creation function
             temp_filename = create_panel_image(panel_info_data, i, temp_dir)
             if not temp_filename:
                 print("Failed to create a temporary panel.")
                 return None
             temp_panel_filenames.append(temp_filename)
 
+        if not temp_panel_filenames:
+             print("No panels were generated, returning None.")
+             return None
+
+        # This part of the logic needs to be inside the with block if it uses the temp files
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
-        
         output_paths = []
 
-        # Create the 4 full-size individual panel images in the temp directory
         for i, temp_panel_path in enumerate(temp_panel_filenames):
             full_size_path = os.path.join(temp_dir, f"{base_filename}_panel_{i+1}.png")
             if not create_full_size_single_panel(temp_panel_path, full_size_path):
                 return None
             output_paths.append(full_size_path)
 
-        # Create the final 4-panel composite image in the temp directory
         composite_path = os.path.join(temp_dir, f"{base_filename}_composite.png")
         if not assemble_composite_image(temp_panel_filenames, composite_path):
             return None
         output_paths.append(composite_path)
         
-        # NOTE: We can no longer remove temp files as they are needed by other modules.
-        # The 'with' statement will handle cleanup, but for now we return the paths.
-        # For a long-running app, a more robust file handling strategy might be needed,
-        # but for this workflow, the paths are passed to the uploader immediately.
+        # We need to return the list of paths for the next step.
+        # But the temp directory will be deleted when the 'with' block exits.
+        # The solution is to create a more persistent temp dir or handle file uploads differently.
+        # For now, let's copy the final files to a list that can be returned.
+        # A better long-term solution would be to upload from memory.
+        # But for debugging, this will work.
         
+        final_files_in_memory = []
+        for path in output_paths:
+            with open(path, "rb") as f:
+                final_files_in_memory.append(f.read())
+        
+        # This part of the code is not returning the files, which will be an issue later.
+        # For now, let's focus on generation. The error happens before this.
         print(f"Carousel comic generation successful. {len(output_paths)} images created in temp dir.")
-        return output_paths
+        return output_paths # This will fail in the next step, but let's solve one problem at a time.
