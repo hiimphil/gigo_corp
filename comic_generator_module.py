@@ -35,7 +35,11 @@ IMAGE_FILES = {
     "A_NOTTALKING_LEFT": "A_nottalking_left.png",
     "B_SURPRISED": "B_surprised.png",
     "D_NOTTALKING": "D_nottalking.png",
-    "D_WAVING": "D_waving.png"
+    "D_WAVING": "D_waving.png",
+    "A_NOTTALKING_D": "A_nottalking_D.png",
+    "A_TALKING_D": "A_talking_D.png",
+    "B_NOTTALKING_D": "B_nottalking_D.png",
+    "B_TALKING_D": "B_talking_D.png"
 }
 # --- End Configuration ---
 
@@ -129,14 +133,18 @@ def process_script(script_lines):
         image_state = "TALKING" if is_talking else "NOTTALKING"
         image_key = f"{character}_{image_state}"
 
-        # 3. Apply logic overrides based on the *original* dialogue
+        # 3. Apply logic overrides based on the *original* dialogue in order of priority
+        
+        # Specific actions override everything
         if character == 'D' and "(waving)" in original_dialogue.lower():
             image_key = 'D_WAVING'
-        
-        if character == 'B' and "!" in original_dialogue:
+        elif character == 'B' and "!" in original_dialogue:
             image_key = 'B_SURPRISED'
-            
-        if character == 'A' and previous_character == 'C':
+        # Looking at D is a high-priority direction
+        elif character in ['A', 'B'] and "(d)" in original_dialogue.lower():
+            image_key = f"{character}_{image_state}_D"
+        # Looking away from C is a lower-priority direction
+        elif character == 'A' and previous_character == 'C':
             image_key = 'A_TALKING_LEFT' if is_talking else 'A_NOTTALKING_LEFT'
 
         panel_details_list.append({"image_key": image_key, "dialogue": display_dialogue})
