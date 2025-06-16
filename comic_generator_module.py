@@ -4,6 +4,7 @@ import datetime
 import os
 import tempfile
 from textwrap import TextWrapper
+import re # Import the regular expression module
 
 # --- Configuration ---
 IMAGE_PATH = "Images/"
@@ -32,7 +33,9 @@ IMAGE_FILES = {
     "C_NOTTALKING": "C_nottalking.png",
     "A_TALKING_LEFT": "A_talking_left.png",
     "A_NOTTALKING_LEFT": "A_nottalking_left.png",
-    "B_SURPRISED": "B_surprised.png"  # New image for surprised B
+    "B_SURPRISED": "B_surprised.png",
+    "D_NOTTALKING": "D_nottalking.png",
+    "D_WAVING": "D_waving.png"
 }
 # --- End Configuration ---
 
@@ -42,25 +45,6 @@ def parse_script_lines(script_text_block):
     if not script_text_block.strip(): return None
     lines = script_text_block.strip().split('\n')
     return lines if len(lines) == 4 else None
-
-
-def process_script_line(line):
-    """Determines the character, dialogue, and default image state from a single script line."""
-    parts = line.split(":", 1)
-    if len(parts) < 2:
-        return {"character": None, "dialogue": line.strip(), "image_key": "A_NOTTALKING"}
-
-    character = parts[0].strip().upper()
-    dialogue = parts[1].strip()
-    
-    if character not in ["A", "B", "C"]:
-        return {"character": None, "dialogue": line.strip(), "image_key": "A_NOTTALKING"}
-
-    is_talking = bool(dialogue)
-    image_state = "TALKING" if is_talking else "NOTTALKING"
-    image_key = f"{character}_{image_state}"
-    
-    return {"character": character, "dialogue": dialogue, "image_key": image_key}
 
 
 def create_panel_image(image_key, dialogue, panel_num, temp_dir):
@@ -86,6 +70,7 @@ def create_panel_image(image_key, dialogue, panel_num, temp_dir):
 
     draw = ImageDraw.Draw(base_image)
 
+    # The dialogue passed to this function is now pre-cleaned.
     if dialogue:
         try:
             font = ImageFont.truetype(MAIN_FONT_PATH, FONT_SIZE)
@@ -107,18 +92,63 @@ def create_panel_image(image_key, dialogue, panel_num, temp_dir):
             draw.text((x_text, y_text), line, font=font, fill=TEXT_COLOR)
             y_text += line_height + SPACING_BETWEEN_LINES
     
-    # JPG does not support transparency, so convert to RGB.
     final_image = base_image.convert("RGB")
     temp_panel_path = os.path.join(temp_dir, f"temp_panel_{panel_num}.jpg")
     final_image.save(temp_panel_path, "jpeg")
     return temp_panel_path
 
 
+def process_script(script_lines):
+    """
+    Processes a list of script lines to determine the final image and dialogue for each panel.
+    This function contains all the conditional logic.
+    """
+    panel_details_list = []
+    previous_character = None
+
+    for line in script_lines:
+        parts = line.split(":", 1)
+        if len(parts) < 2:
+            panel_details_list.append({"image_key": "A_NOTTALKING", "dialogue": line.strip()})
+            previous_character = None
+            continue
+
+        character = parts[0].strip().upper()
+        original_dialogue = parts[1].strip()
+        
+        if character not in ["A", "B", "C", "D"]:
+            panel_details_list.append({"image_key": "A_NOTTALKING", "dialogue": original_dialogue})
+            previous_character = None
+            continue
+
+        # 1. Determine final display text by removing actions in parentheses
+        display_dialogue = re.sub(r"\(.*?\)", "", original_dialogue).strip()
+
+        # 2. Determine base talking state
+        is_talking = bool(display_dialogue)
+        image_state = "TALKING" if is_talking else "NOTTALKING"
+        image_key = f"{character}_{image_state}"
+
+        # 3. Apply logic overrides based on the *original* dialogue
+        if character == 'D' and "(waving)" in original_dialogue.lower():
+            image_key = 'D_WAVING'
+        
+        if character == 'B' and "!" in original_dialogue:
+            image_key = 'B_SURPRISED'
+            
+        if character == 'A' and previous_character == 'C':
+            image_key = 'A_TALKING_LEFT' if is_talking else 'A_NOTTALKING_LEFT'
+
+        panel_details_list.append({"image_key": image_key, "dialogue": display_dialogue})
+        previous_character = character
+        
+    return panel_details_list
+
+
 def create_full_size_single_panel(panel_image_path, output_path):
     """Creates a 1080x1350 image by resizing a panel."""
     try:
         panel_img = Image.open(panel_image_path)
-        # No need to convert here since it's already JPG/RGB
         full_size_panel = panel_img.resize((1080, 1350), Image.Resampling.LANCZOS)
         full_size_panel.save(output_path, "jpeg")
         return True
@@ -152,7 +182,6 @@ def assemble_composite_image(panel_filenames, output_path):
 
 def _generate_images_from_panel_data(panel_details_list, temp_dir):
     """Helper function to create all image files from a list of panel details."""
-    # 1. Create the four small panels
     temp_panel_filenames = []
     for i, panel_info in enumerate(panel_details_list):
         temp_filename = create_panel_image(
@@ -165,12 +194,10 @@ def _generate_images_from_panel_data(panel_details_list, temp_dir):
             return None, None
         temp_panel_filenames.append(temp_filename)
         
-    # 2. Assemble the composite for preview
     composite_preview_path = os.path.join(temp_dir, "preview_composite.jpg")
     if not assemble_composite_image(temp_panel_filenames, composite_preview_path):
         return None, None
 
-    # 3. Create full-size panels and final composite for output
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
     output_paths = []
@@ -188,38 +215,12 @@ def _generate_images_from_panel_data(panel_details_list, temp_dir):
     return composite_preview_path, output_paths
 
 
-def apply_look_away_logic(panel_details):
-    """Applies the 'A looks away from C' logic to a list of panel details."""
-    for i in range(1, len(panel_details)):
-        current_panel = panel_details[i]
-        previous_panel = panel_details[i-1]
-        
-        if current_panel['character'] == 'A' and previous_panel['character'] == 'C':
-            is_talking = bool(current_panel['dialogue'].strip())
-            if is_talking:
-                current_panel['image_key'] = 'A_TALKING_LEFT'
-            else:
-                current_panel['image_key'] = 'A_NOTTALKING_LEFT'
-    return panel_details
-
-
-def apply_surprise_logic(panel_details):
-    """Applies the 'B is surprised' logic if their dialogue has an exclamation mark."""
-    for panel in panel_details:
-        if panel['character'] == 'B' and "!" in panel['dialogue']:
-            panel['image_key'] = 'B_SURPRISED'
-    return panel_details
-
-
 def generate_preview_image(comic_script_text):
     """Generates a single in-memory composite preview image as JPG."""
     script_lines = parse_script_lines(comic_script_text)
     if not script_lines: return None
 
-    panel_details_list = [process_script_line(line) for line in script_lines]
-    # Apply all logic rules in order
-    panel_details_list = apply_look_away_logic(panel_details_list)
-    panel_details_list = apply_surprise_logic(panel_details_list)
+    panel_details_list = process_script(script_lines)
     
     with tempfile.TemporaryDirectory() as temp_dir:
         composite_path, _ = _generate_images_from_panel_data(panel_details_list, temp_dir)
@@ -234,10 +235,7 @@ def generate_comic_from_script_text(comic_script_text):
     script_lines = parse_script_lines(comic_script_text)
     if not script_lines: return None
 
-    panel_details_list = [process_script_line(line) for line in script_lines]
-    # Apply all logic rules in order
-    panel_details_list = apply_look_away_logic(panel_details_list)
-    panel_details_list = apply_surprise_logic(panel_details_list)
+    panel_details_list = process_script(script_lines)
 
     temp_dir = tempfile.mkdtemp()
     _, output_paths = _generate_images_from_panel_data(panel_details_list, temp_dir)
