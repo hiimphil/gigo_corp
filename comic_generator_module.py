@@ -134,16 +134,13 @@ def process_script(script_lines):
         image_key = f"{character}_{image_state}"
 
         # 3. Apply logic overrides based on the *original* dialogue in order of priority
-        
-        # Specific actions override everything
+        #    This has been reordered to prioritize the directional (d) cue.
         if character == 'D' and "(waving)" in original_dialogue.lower():
             image_key = 'D_WAVING'
-        elif character == 'B' and "!" in original_dialogue:
-            image_key = 'B_SURPRISED'
-        # Looking at D is a high-priority direction
         elif character in ['A', 'B'] and "(d)" in original_dialogue.lower():
             image_key = f"{character}_{image_state}_D"
-        # Looking away from C is a lower-priority direction
+        elif character == 'B' and "!" in original_dialogue:
+            image_key = 'B_SURPRISED'
         elif character == 'A' and previous_character == 'C':
             image_key = 'A_TALKING_LEFT' if is_talking else 'A_NOTTALKING_LEFT'
 
