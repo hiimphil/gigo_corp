@@ -149,10 +149,53 @@ if st.session_state.generated_comic_paths:
                 st.error(f"Imgur Upload Failed: {error_msg}")
         
         st.divider()
+        st.subheader("🚀 Post to Socials")
         st.markdown("##### Tailor Your Captions:")
-        # ... (Caption UI) ...
-        st.markdown("##### Individual Platform Posting:")
-        # ... (Posting buttons) ...
+        caption_cols = st.columns(3)
+        with caption_cols[0]:
+            st.session_state.instagram_caption = st.text_area("🇮📷 Instagram:", value=st.session_state.instagram_caption, height=150)
+        with caption_cols[1]:
+            st.session_state.bluesky_caption = st.text_area("☁️ Bluesky:", value=st.session_state.bluesky_caption, height=150)
+        with caption_cols[2]:
+            st.session_state.twitter_caption = st.text_area("🐦 Twitter:", value=st.session_state.twitter_caption, height=150)
 
+        st.markdown("##### Individual Platform Posting:")
+        col_ig_post, col_bsky_post, col_twitter_post = st.columns(3)
+        with col_ig_post:
+            if st.button("🇮📷 Post Carousel to Instagram", key="post_ig_carousel_button_v2", use_container_width=True):
+                if not st.session_state.imgur_image_links:
+                    st.warning("Please upload all images to Imgur first.")
+                elif not st.session_state.instagram_caption.strip():
+                    st.warning("Please enter a caption for Instagram.")
+                else:
+                    with st.spinner("Posting carousel to Instagram..."):
+                        post_success, message = social_media_module.post_carousel_to_instagram_graph_api(
+                            st.session_state.imgur_image_links, st.session_state.instagram_caption
+                        )
+                    if post_success: st.success(f"Instagram: Posted! {message}")
+                    else: st.error(f"Instagram: Failed! {message}")
+        with col_bsky_post:
+            if st.button("☁️ Post Composite to Bluesky", key="post_bsky_composite", use_container_width=True):
+                if not st.session_state.bluesky_caption.strip(): st.warning("Bluesky caption needed.")
+                else:
+                    composite_image_path = st.session_state.generated_comic_paths[-1]
+                    with st.spinner("Posting composite to Bluesky..."):
+                        bsky_success, bsky_message = social_media_module.post_comic_to_bluesky(
+                            composite_image_path, st.session_state.bluesky_caption
+                        )
+                    if bsky_success: st.success(f"Bluesky: Posted! {bsky_message}")
+                    else: st.error(f"Bluesky: Failed! {bsky_message}")
+        with col_twitter_post:
+            if st.button("🐦 Post Composite to Twitter", key="post_twitter_composite", use_container_width=True):
+                if not st.session_state.twitter_caption.strip(): st.warning("Twitter caption needed.")
+                else:
+                    composite_image_path = st.session_state.generated_comic_paths[-1]
+                    with st.spinner("Posting composite to Twitter..."):
+                        twitter_success, twitter_message = social_media_module.post_comic_to_twitter(
+                            composite_image_path, st.session_state.twitter_caption
+                        )
+                    if twitter_success: st.success(f"Twitter: Posted! {twitter_message}")
+                    else: st.error(f"Twitter: Failed! {twitter_message}")
     else:
         st.info("Enter the correct password in the sidebar to enable uploading and posting.")
+
