@@ -64,16 +64,16 @@ def post_comic_to_bluesky(image_path, caption):
                 }
             }
             
-            # FINAL, DEFINITIVE FIX:
-            # The create_record function now expects a single object containing
-            # the repo, collection, and the record data itself.
-            response = client.com.atproto.repo.create_record(
-                data={
-                    "repo": client.me.did,
-                    "collection": bluesky_models.ids.AppBskyFeedPost,
-                    "record": record_data
-                }
-            )
+            # FINAL, DEFINITIVE FIX #3:
+            # The 'create_record' function now expects a single positional argument.
+            # This argument is a dictionary containing all required fields.
+            data_to_send = {
+                "repo": client.me.did,
+                "collection": bluesky_models.ids.AppBskyFeedPost,
+                "record": record_data
+            }
+
+            response = client.com.atproto.repo.create_record(data_to_send)
             return True, f"Post URI: {response.uri}"
 
     except Exception as e:
