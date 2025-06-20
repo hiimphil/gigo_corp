@@ -46,31 +46,33 @@ def post_comic_to_bluesky(image_path, caption):
             if not upload or not upload.blob:
                 return False, "Failed to upload image blob to Bluesky."
             
-            embed_dict = {
-                "$type": "app.bsky.embed.images",
-                "images": [{
-                    "alt": "Gigo Corp Comic Strip",
-                    "image": upload.blob,
-                    "aspectRatio": {
-                        "width": width,
-                        "height": height
-                    }
-                }]
-            }
-            
+            # This is the actual content of the post (the "record")
             record_data = {
                 "$type": "app.bsky.feed.post",
                 "text": caption,
                 "createdAt": client.get_current_time_iso(),
-                "embed": embed_dict
+                "embed": {
+                    "$type": "app.bsky.embed.images",
+                    "images": [{
+                        "alt": "Gigo Corp Comic Strip",
+                        "image": upload.blob,
+                        "aspectRatio": {
+                            "width": width,
+                            "height": height
+                        }
+                    }]
+                }
             }
             
-            # FINAL FIX: The 'create_record' function now expects the record data
-            # to be passed to a 'data' argument instead of 'record'.
+            # FINAL, DEFINITIVE FIX:
+            # The create_record function now expects a single object containing
+            # the repo, collection, and the record data itself.
             response = client.com.atproto.repo.create_record(
-                repo=client.me.did,
-                collection=bluesky_models.ids.AppBskyFeedPost,
-                data=record_data # Use 'data' instead of 'record'
+                data={
+                    "repo": client.me.did,
+                    "collection": bluesky_models.ids.AppBskyFeedPost,
+                    "record": record_data
+                }
             )
             return True, f"Post URI: {response.uri}"
 
