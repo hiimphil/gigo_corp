@@ -46,30 +46,29 @@ def post_comic_to_bluesky(image_path, caption):
             if not upload or not upload.blob:
                 return False, "Failed to upload image blob to Bluesky."
             
-            # FINAL FIX: Instantiate the AspectRatio object from the top-level 'models' import.
-            aspect_ratio_object = bluesky_models.AppBskyEmbedImages.AspectRatio(
-                width=width,
-                height=height
-            )
-            
-            embed = bluesky_models.AppBskyEmbedImages.Main(
-                images=[
-                    bluesky_models.AppBskyEmbedImages.Image(
-                        alt="Gigo Corp Comic Strip",
-                        image=upload.blob,
-                        aspect_ratio=aspect_ratio_object
-                    )
-                ]
-            )
+            # FINAL FIX: Construct the embed as a raw dictionary to match the API's expected schema.
+            # This is more robust against library updates. Note the camelCase for 'aspectRatio'.
+            embed_dict = {
+                "$type": "app.bsky.embed.images",
+                "images": [{
+                    "alt": "Gigo Corp Comic Strip",
+                    "image": upload.blob,
+                    "aspectRatio": {
+                        "width": width,
+                        "height": height
+                    }
+                }]
+            }
             
             response = client.com.atproto.repo.create_record(
                 repo=client.me.did,
                 collection=bluesky_models.ids.AppBskyFeedPost,
-                record=bluesky_models.AppBskyFeedPost.Main(
-                    text=caption,
-                    created_at=client.get_current_time_iso(),
-                    embed=embed
-                )
+                record={
+                    "$type": "app.bsky.feed.post",
+                    "text": caption,
+                    "createdAt": client.get_current_time_iso(),
+                    "embed": embed_dict
+                }
             )
             return True, f"Post URI: {response.uri}"
 
