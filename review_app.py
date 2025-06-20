@@ -59,26 +59,22 @@ is_admin = check_password()
 
 st.sidebar.divider()
 
-# --- NEW: Script Library in Sidebar ---
+# --- SCRIPT LIBRARY (REFACTORED) ---
 st.sidebar.header("📜 Script Library")
 saved_scripts = database_module.load_scripts()
 
-# Load Script Dropdown
 if saved_scripts:
-    # Use a blank option to prevent auto-loading on first run
-    script_options = ["-- Select a script to load --"] + list(saved_scripts.keys())
-    selected_script_title = st.sidebar.selectbox(
-        "Load a saved script:",
-        options=script_options,
-        key='load_script_selectbox'
+    script_to_load = st.sidebar.selectbox(
+        "Select a script:",
+        options=list(saved_scripts.keys()),
+        index=None,
+        placeholder="-- Choose a script to load --"
     )
-    if selected_script_title != "-- Select a script to load --":
-        # Load the script and title into session state
-        st.session_state.current_script = saved_scripts[selected_script_title]
-        st.session_state.script_title = selected_script_title
-        # Reset the selectbox to avoid reloading on every rerun
-        st.session_state.load_script_selectbox = "-- Select a script to load --"
-        st.rerun() # Rerun to update the text area immediately
+    if st.sidebar.button("Load Script"):
+        if script_to_load:
+            st.session_state.current_script = saved_scripts[script_to_load]
+            st.session_state.script_title = script_to_load
+            st.rerun()
 else:
     st.sidebar.write("No saved scripts yet.")
 
