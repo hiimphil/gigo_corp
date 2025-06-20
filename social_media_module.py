@@ -2,10 +2,7 @@
 import os
 import requests
 from dotenv import load_dotenv
-from atproto import Client as BlueskyClient, models as bluesky_models
-from PIL import Image as PILImageModule # Import the Image module from Pillow
 import tweepy
-import time
 import praw # Import the Python Reddit API Wrapper
 
 # --- Shared Load Function ---
@@ -92,83 +89,3 @@ def post_comic_to_reddit(image_path, title, subreddit_name):
 
     except Exception as e:
         return False, f"An error occurred with Reddit: {e}"
-
-
-# --- Instagram Graph API Configuration & Functions ---
-INSTAGRAM_GRAPH_API_VERSION = "v20.0" 
-
-def load_instagram_graph_api_credentials():
-    creds = {
-        "access_token": os.getenv("INSTAGRAM_GRAPH_API_ACCESS_TOKEN"),
-        "business_account_id": os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID")
-    }
-    if not all(creds.values()): return None
-    return creds
-
-def post_carousel_to_instagram_graph_api(image_public_urls, caption):
-    """
-    Posts a carousel of images (via public URLs) and a caption to Instagram.
-    """
-    credentials = load_instagram_graph_api_credentials()
-    if not credentials:
-        return False, "Instagram Graph API credentials not configured."
-
-    ig_user_id = credentials["business_account_id"]
-    access_token = credentials["access_token"]
-    
-    if not image_public_urls or len(image_public_urls) < 2 or len(image_public_urls) > 10:
-        return False, f"Invalid number of images for carousel. Got {len(image_public_urls)}, need 2-10."
-
-    child_container_ids = []
-    for i, image_url in enumerate(image_public_urls):
-        upload_url = f"https://graph.facebook.com/{INSTAGRAM_GRAPH_API_VERSION}/{ig_user_id}/media"
-        upload_params = {'image_url': image_url, 'is_carousel_item': 'true', 'access_token': access_token}
-        try:
-            response_upload = requests.post(upload_url, params=upload_params)
-            response_upload.raise_for_status()
-            creation_id = response_upload.json()['id']
-            child_container_ids.append(creation_id)
-        except requests.exceptions.RequestException as e:
-            return False, f"Error creating media container for image {i+1}: {e.response.json() if e.response else e}"
-
-    for i, container_id in enumerate(child_container_ids):
-        for _ in range(15):
-            status_url = f"https://graph.facebook.com/{INSTAGRAM_GRAPH_API_VERSION}/{container_id}"
-            status_params = {'fields': 'status_code', 'access_token': access_token}
-            response_status = requests.get(status_url, params=status_params).json()
-            status = response_status.get('status_code')
-            if status == 'FINISHED': break
-            if status == 'ERROR': return False, f"Error processing container {container_id}. Status: ERROR."
-            time.sleep(5)
-        else:
-            return False, f"Timeout: Container {container_id} was not ready in time."
-    
-    carousel_url = f"https://graph.facebook.com/{INSTAGRAM_GRAPH_API_VERSION}/{ig_user_id}/media"
-    carousel_params = {
-        'caption': caption,
-        'media_type': 'CAROUSEL',
-        'children': ','.join(child_container_ids),
-        'access_token': access_token
-    }
-    try:
-        response_carousel = requests.post(carousel_url, params=carousel_params)
-        response_carousel.raise_for_status()
-        carousel_container_id = response_carousel.json()['id']
-    except requests.exceptions.RequestException as e:
-        return False, f"Error creating main carousel container: {e.response.json() if e.response else e}"
-
-    publish_url = f"https://graph.facebook.com/{INSTAGRAM_GRAPH_API_VERSION}/{ig_user_id}/media_publish"
-    publish_params = {'creation_id': carousel_container_id, 'access_token': access_token}
-    try:
-        response_publish = requests.post(publish_url, params=publish_params)
-        response_publish.raise_for_status()
-        published_media_id = response_publish.json().get('id')
-        if published_media_id:
-            permalink_url = f"https://graph.facebook.com/{INSTAGRAM_GRAPH_API_VERSION}/{published_media_id}?fields=permalink&access_token={access_token}"
-            permalink_response = requests.get(permalink_url).json()
-            permalink = permalink_response.get('permalink', f"Post ID: {published_media_id}")
-            return True, permalink
-        else:
-            return False, f"Failed to publish carousel. Response: {response_publish.json()}"
-    except requests.exceptions.RequestException as e:
-        return False, f"Error publishing carousel container: {e.response.json() if e.response else e}"
