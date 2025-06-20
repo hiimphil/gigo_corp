@@ -46,16 +46,18 @@ def post_comic_to_bluesky(image_path, caption):
             if not upload or not upload.blob:
                 return False, "Failed to upload image blob to Bluesky."
             
-            # FIX: Instantiate the AspectRatio object as required by the library.
+            # FINAL FIX: Instantiate the AspectRatio object from the top-level 'models' import.
+            aspect_ratio_object = bluesky_models.AppBskyEmbedImages.AspectRatio(
+                width=width,
+                height=height
+            )
+            
             embed = bluesky_models.AppBskyEmbedImages.Main(
                 images=[
                     bluesky_models.AppBskyEmbedImages.Image(
                         alt="Gigo Corp Comic Strip",
                         image=upload.blob,
-                        aspect_ratio=bluesky_models.AppBskyEmbedImages.AspectRatio(
-                            width=width,
-                            height=height
-                        )
+                        aspect_ratio=aspect_ratio_object
                     )
                 ]
             )
