@@ -58,19 +58,19 @@ def post_comic_to_bluesky(image_path, caption):
                 }]
             }
             
-            # FINAL FIX: The 'create_record' function now expects the record data
-            # to be passed to a 'data' argument instead of 'record'.
+            # FINAL FIX #2: The create_record function now expects a single data object
+            # that contains the repo, collection, and the record itself.
             record_data = {
                 "$type": "app.bsky.feed.post",
                 "text": caption,
                 "createdAt": client.get_current_time_iso(),
                 "embed": embed_dict
             }
-
+            
             response = client.com.atproto.repo.create_record(
                 repo=client.me.did,
                 collection=bluesky_models.ids.AppBskyFeedPost,
-                data=record_data
+                record=record_data # The record data itself
             )
             return True, f"Post URI: {response.uri}"
 
