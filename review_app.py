@@ -2,8 +2,9 @@
 import streamlit as st
 import comic_generator_module
 import ai_script_module
-import social_media_module # Still needed for other platforms
-import bluesky_module # Import our new, separate module
+import social_media_module # Still used for Twitter & Reddit
+import bluesky_module
+import instagram_module # Import our new, separate module
 import imgur_uploader
 import os
 import praw
@@ -30,7 +31,7 @@ st.title("Gigo Corp Comic Builder")
 
 # --- Session State Initialization ---
 if 'current_script' not in st.session_state:
-    st.session_state.current_script = "" # Start with a blank script
+    st.session_state.current_script = ""
 
 if 'preview_image' not in st.session_state:
     st.session_state.preview_image = None
@@ -173,11 +174,20 @@ if st.session_state.generated_comic_paths:
         
         with col_ig_post:
             if st.button("🇮📷 Post Carousel to Instagram", key="post_ig_carousel_button_v2", use_container_width=True):
-                # ... Instagram posting logic ...
-                pass
+                if not st.session_state.imgur_image_links:
+                    st.warning("Please upload all images to Imgur first.")
+                elif not st.session_state.instagram_caption.strip():
+                    st.warning("Please enter a caption for Instagram.")
+                else:
+                    with st.spinner("Posting carousel to Instagram..."):
+                        # FIX: Restored the call to the instagram_module
+                        post_success, message = instagram_module.post_carousel_to_instagram_graph_api(
+                            st.session_state.imgur_image_links, st.session_state.instagram_caption
+                        )
+                    if post_success: st.success(f"Instagram: Posted! {message}")
+                    else: st.error(f"Instagram: Failed! {message}")
 
         with col_bsky_post:
-            # Updated to call the new module
             if st.button("☁️ Post Composite to Bluesky", key="post_bsky_composite", use_container_width=True):
                 if not st.session_state.bluesky_caption.strip():
                     st.warning("Bluesky caption needed.")
@@ -194,8 +204,16 @@ if st.session_state.generated_comic_paths:
         
         with col_twitter_post:
             if st.button("🐦 Post Composite to Twitter", key="post_twitter_composite", use_container_width=True):
-                 # ... (Logic remains the same)
-                pass
+                if not st.session_state.twitter_caption.strip():
+                    st.warning("Twitter caption needed.")
+                else:
+                    composite_image_path = st.session_state.generated_comic_paths[-1]
+                    with st.spinner("Posting composite to Twitter..."):
+                        twitter_success, twitter_message = social_media_module.post_comic_to_twitter(
+                            composite_image_path, st.session_state.twitter_caption
+                        )
+                    if twitter_success: st.success(f"Twitter: Posted! {twitter_message}")
+                    else: st.error(f"Twitter: Failed! {twitter_message}")
         
         with col_reddit_post:
             if st.button("🤖 Post Composite to Reddit", key="post_reddit_composite", use_container_width=True):
