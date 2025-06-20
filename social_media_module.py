@@ -46,8 +46,6 @@ def post_comic_to_bluesky(image_path, caption):
             if not upload or not upload.blob:
                 return False, "Failed to upload image blob to Bluesky."
             
-            # FINAL FIX: Construct the embed as a raw dictionary to match the API's expected schema.
-            # This is more robust against library updates. Note the camelCase for 'aspectRatio'.
             embed_dict = {
                 "$type": "app.bsky.embed.images",
                 "images": [{
@@ -60,15 +58,19 @@ def post_comic_to_bluesky(image_path, caption):
                 }]
             }
             
+            # FINAL FIX: The 'create_record' function now expects the record data
+            # to be passed to a 'data' argument instead of 'record'.
+            record_data = {
+                "$type": "app.bsky.feed.post",
+                "text": caption,
+                "createdAt": client.get_current_time_iso(),
+                "embed": embed_dict
+            }
+
             response = client.com.atproto.repo.create_record(
                 repo=client.me.did,
                 collection=bluesky_models.ids.AppBskyFeedPost,
-                record={
-                    "$type": "app.bsky.feed.post",
-                    "text": caption,
-                    "createdAt": client.get_current_time_iso(),
-                    "embed": embed_dict
-                }
+                data=record_data
             )
             return True, f"Post URI: {response.uri}"
 
