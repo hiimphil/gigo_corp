@@ -1,13 +1,14 @@
 # comic_generator_module.py
-from PIL import Image, ImageDraw, ImageFont
-import datetime
 import os
+import re
+import random
+import datetime
 import tempfile
+from PIL import Image, ImageDraw, ImageFont
 from textwrap import TextWrapper
-import re # Import the regular expression module
 
 # --- Configuration ---
-IMAGE_PATH = "Images/"
+IMAGE_BASE_PATH = "Images/"
 FONT_PATH = "Fonts/"
 TITLEFONT_PATH = os.path.join(FONT_PATH, "RNS-B.ttf")
 MAIN_FONT_PATH = os.path.join(FONT_PATH, "Krungthep.ttf")
@@ -23,58 +24,115 @@ HEADER_TEXT = "GIGOCO"
 HEADER_HEIGHT = 40
 HEADER_FONT_SIZE = 40
 HEADER_TEXT_COLOR = "#6d7467"
-
-IMAGE_FILES = {
-    "A_TALKING": "A_talking.png",
-    "A_NOTTALKING": "A_nottalking.png",
-    "B_TALKING": "B_talking.png",
-    "B_NOTTALKING": "B_nottalking.png",
-    "C_TALKING": "C_talking.png",
-    "C_NOTTALKING": "C_nottalking.png",
-    "A_TALKING_LEFT": "A_talking_left.png",
-    "A_NOTTALKING_LEFT": "A_nottalking_left.png",
-    "B_SURPRISED": "B_surprised.png",
-    "D_NOTTALKING": "D_nottalking.png",
-    "D_WAVING": "D_waving.png",
-    "A_NOTTALKING_D": "A_nottalking_D.png",
-    "A_TALKING_D": "A_talking_D.png",
-    "B_NOTTALKING_D": "B_nottalking_D.png",
-    "B_TALKING_D": "B_talking_D.png"
-}
 # --- End Configuration ---
 
 
-def parse_script_lines(script_text_block):
-    """Parses a block of text into exactly 4 lines."""
-    if not script_text_block.strip(): return None
-    lines = script_text_block.strip().split('\n')
-    return lines if len(lines) == 4 else None
-
-
-def create_panel_image(image_key, dialogue, panel_num, temp_dir):
-    """Creates a single panel image with dialogue text."""
-    image_filename = IMAGE_FILES.get(image_key)
-    if not image_filename:
-        print(f"Warning: Image key '{image_key}' not found. Using fallback.")
-        image_filename = IMAGE_FILES["A_NOTTALKING"]
-
-    full_image_path = os.path.join(IMAGE_PATH, image_filename)
+def parse_script_line(line):
+    """Parses a single line into its character, action, and dialogue components."""
+    match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
+    if not match:
+        return None, None, line # Return the line as dialogue if it doesn't match
     
-    if not os.path.exists(full_image_path):
-        print(f"--> FATAL ERROR: IMAGE NOT FOUND AT: {full_image_path}")
+    character = match.group(1).upper()
+    action = match.group(2) or "normal" # Default action/emotion is 'normal'
+    dialogue = match.group(3).strip()
+    
+    return character, action.lower(), dialogue
+
+
+def determine_direction(current_char, prev_char):
+    """Determines which way the character should be looking."""
+    if not prev_char or current_char == prev_char:
+        return "Right" # Default direction
+    
+    # Define directional logic (can be expanded)
+    # Example: A looks left at C and D, but right at B
+    if current_char == 'A' and prev_char in ['C', 'D']:
+        return "Left"
+    if current_char == 'B' and prev_char in ['C', 'D']:
+        return "Left"
+        
+    return "Right" # Default for all other interactions
+
+
+def find_image_path(character, direction, talking_state, action):
+    """
+    Builds a path to an image folder and selects a random image.
+    Falls back to 'Normal' if a specific action folder doesn't exist.
+    """
+    # Attempt to build the most specific path first
+    specific_path = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, action)
+    
+    # Fallback to the 'normal' action if the specific one doesn't exist
+    if not os.path.isdir(specific_path):
+        print(f"Info: Action folder '{specific_path}' not found. Falling back to 'Normal'.")
+        final_path = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal")
+    else:
+        final_path = specific_path
+
+    if not os.path.isdir(final_path):
+        print(f"--> ERROR: Base folder not found: '{final_path}'")
         return None
 
+    # Get all .jpg images from the directory
     try:
-        base_image = Image.open(full_image_path).convert("RGBA")
+        images = [f for f in os.listdir(final_path) if f.lower().endswith('.jpg')]
+        if not images:
+            print(f"--> ERROR: No JPG images found in '{final_path}'")
+            return None
+        # Return the full path to a randomly selected image
+        return os.path.join(final_path, random.choice(images))
+    except Exception as e:
+        print(f"--> ERROR: Could not read directory '{final_path}': {e}")
+        return None
+
+
+def process_script(script_text):
+    """
+    Processes a full script and returns a list of panel data
+    containing image paths and dialogue.
+    """
+    panel_data = []
+    previous_character = None
+    lines = script_text.strip().split('\n')
+    
+    if len(lines) != 4:
+        return None # Script must have 4 lines
+
+    for line in lines:
+        character, action, dialogue = parse_script_line(line)
+        if not character:
+            print(f"Warning: Could not parse line: '{line}'")
+            continue
+
+        direction = determine_direction(character, previous_character)
+        talking_state = "Talking" if dialogue else "Nottalking"
+        
+        image_path = find_image_path(character, direction, talking_state, action)
+        
+        if not image_path:
+            print(f"FATAL: Could not find any image for line: '{line}'")
+            # You could add a fallback to a default placeholder image here if needed
+            return None 
+
+        panel_data.append({"image_path": image_path, "dialogue": dialogue})
+        previous_character = character
+        
+    return panel_data
+
+
+def create_panel_image(image_path, dialogue, panel_num, temp_dir):
+    """Creates a single panel image with dialogue text."""
+    try:
+        base_image = Image.open(image_path).convert("RGB") # Open as RGB for JPG
         if base_image.size != (PANEL_WIDTH, PANEL_HEIGHT):
             base_image = base_image.resize((PANEL_WIDTH, PANEL_HEIGHT), Image.Resampling.LANCZOS)
     except Exception as e:
-        print(f"--> FATAL ERROR: An error occurred while opening '{full_image_path}': {e}")
+        print(f"--> FATAL ERROR: Could not open or resize image '{image_path}': {e}")
         return None
 
     draw = ImageDraw.Draw(base_image)
 
-    # The dialogue passed to this function is now pre-cleaned.
     if dialogue:
         try:
             font = ImageFont.truetype(MAIN_FONT_PATH, FONT_SIZE)
@@ -96,70 +154,9 @@ def create_panel_image(image_key, dialogue, panel_num, temp_dir):
             draw.text((x_text, y_text), line, font=font, fill=TEXT_COLOR)
             y_text += line_height + SPACING_BETWEEN_LINES
     
-    final_image = base_image.convert("RGB")
     temp_panel_path = os.path.join(temp_dir, f"temp_panel_{panel_num}.jpg")
-    final_image.save(temp_panel_path, "jpeg")
+    base_image.save(temp_panel_path, "jpeg", quality=95)
     return temp_panel_path
-
-
-def process_script(script_lines):
-    """
-    Processes a list of script lines to determine the final image and dialogue for each panel.
-    This function contains all the conditional logic.
-    """
-    panel_details_list = []
-    previous_character = None
-
-    for line in script_lines:
-        parts = line.split(":", 1)
-        if len(parts) < 2:
-            panel_details_list.append({"image_key": "A_NOTTALKING", "dialogue": line.strip()})
-            previous_character = None
-            continue
-
-        character = parts[0].strip().upper()
-        original_dialogue = parts[1].strip()
-        
-        if character not in ["A", "B", "C", "D"]:
-            panel_details_list.append({"image_key": "A_NOTTALKING", "dialogue": original_dialogue})
-            previous_character = None
-            continue
-
-        # 1. Determine final display text by removing actions in parentheses
-        display_dialogue = re.sub(r"\(.*?\)", "", original_dialogue).strip()
-
-        # 2. Determine base talking state
-        is_talking = bool(display_dialogue)
-        image_state = "TALKING" if is_talking else "NOTTALKING"
-        image_key = f"{character}_{image_state}"
-
-        # 3. Apply logic overrides based on the *original* dialogue in order of priority
-        #    This has been reordered to prioritize the directional (d) cue.
-        if character == 'D' and "(waving)" in original_dialogue.lower():
-            image_key = 'D_WAVING'
-        elif character in ['A', 'B'] and "(d)" in original_dialogue.lower():
-            image_key = f"{character}_{image_state}_D"
-        elif character == 'B' and "!" in original_dialogue:
-            image_key = 'B_SURPRISED'
-        elif character == 'A' and previous_character == 'C':
-            image_key = 'A_TALKING_LEFT' if is_talking else 'A_NOTTALKING_LEFT'
-
-        panel_details_list.append({"image_key": image_key, "dialogue": display_dialogue})
-        previous_character = character
-        
-    return panel_details_list
-
-
-def create_full_size_single_panel(panel_image_path, output_path):
-    """Creates a 1080x1350 image by resizing a panel."""
-    try:
-        panel_img = Image.open(panel_image_path)
-        full_size_panel = panel_img.resize((1080, 1350), Image.Resampling.LANCZOS)
-        full_size_panel.save(output_path, "jpeg")
-        return True
-    except Exception as e:
-        print(f"Error creating full-size single panel: {e}")
-        return False
 
 
 def assemble_composite_image(panel_filenames, output_path):
@@ -178,74 +175,77 @@ def assemble_composite_image(panel_filenames, output_path):
         composite_image.paste(images[1], (546, 40))
         composite_image.paste(images[2], (14, 697))
         composite_image.paste(images[3], (546, 697))
-        composite_image.save(output_path, "jpeg")
+        composite_image.save(output_path, "jpeg", quality=95)
         return True
     except Exception as e:
         print(f"Error assembling composite image: {e}")
         return False
 
 
-def _generate_images_from_panel_data(panel_details_list, temp_dir):
-    """Helper function to create all image files from a list of panel details."""
-    temp_panel_filenames = []
-    for i, panel_info in enumerate(panel_details_list):
-        temp_filename = create_panel_image(
-            image_key=panel_info['image_key'],
-            dialogue=panel_info['dialogue'],
-            panel_num=i,
-            temp_dir=temp_dir
-        )
-        if not temp_filename:
-            return None, None
-        temp_panel_filenames.append(temp_filename)
-        
-    composite_preview_path = os.path.join(temp_dir, "preview_composite.jpg")
-    if not assemble_composite_image(temp_panel_filenames, composite_preview_path):
+def _generate_images(script_text):
+    """Shared logic for preview and final generation."""
+    panel_data = process_script(script_text)
+    if not panel_data:
         return None, None
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
-    output_paths = []
-    for i, temp_panel_path in enumerate(temp_panel_filenames):
-        full_size_path = os.path.join(temp_dir, f"{base_filename}_panel_{i+1}.jpg")
-        if not create_full_size_single_panel(temp_panel_path, full_size_path):
+    temp_dir = tempfile.mkdtemp()
+    temp_panel_paths = []
+    for i, panel in enumerate(panel_data):
+        path = create_panel_image(panel['image_path'], panel['dialogue'], i, temp_dir)
+        if not path:
             return None, None
-        output_paths.append(full_size_path)
+        temp_panel_paths.append(path)
 
-    final_composite_path = os.path.join(temp_dir, f"{base_filename}_composite.jpg")
-    if not assemble_composite_image(temp_panel_filenames, final_composite_path):
-        return None, None
-    output_paths.append(final_composite_path)
-
-    return composite_preview_path, output_paths
+    return temp_panel_paths, temp_dir
 
 
 def generate_preview_image(comic_script_text):
-    """Generates a single in-memory composite preview image as JPG."""
-    script_lines = parse_script_lines(comic_script_text)
-    if not script_lines: return None
+    """Generates a single in-memory composite preview image."""
+    temp_panel_paths, temp_dir = _generate_images(comic_script_text)
+    if not temp_panel_paths:
+        return None
 
-    panel_details_list = process_script(script_lines)
-    
-    with tempfile.TemporaryDirectory() as temp_dir:
-        composite_path, _ = _generate_images_from_panel_data(panel_details_list, temp_dir)
-        if not composite_path:
+    try:
+        composite_preview_path = os.path.join(temp_dir, "preview_composite.jpg")
+        if not assemble_composite_image(temp_panel_paths, composite_preview_path):
             return None
-        with Image.open(composite_path) as img:
+        with Image.open(composite_preview_path) as img:
             return img.copy()
+    finally:
+        # Clean up the temporary directory
+        import shutil
+        shutil.rmtree(temp_dir)
 
 
 def generate_comic_from_script_text(comic_script_text):
     """Generates 5 final JPG images from a block of script text."""
-    script_lines = parse_script_lines(comic_script_text)
-    if not script_lines: return None
-
-    panel_details_list = process_script(script_lines)
-
-    temp_dir = tempfile.mkdtemp()
-    _, output_paths = _generate_images_from_panel_data(panel_details_list, temp_dir)
-    
-    if not output_paths:
+    temp_panel_paths, temp_dir = _generate_images(comic_script_text)
+    if not temp_panel_paths:
         return None
-    
-    return output_paths
+
+    try:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
+        
+        output_paths = []
+
+        # Create the four full-size panels
+        for i, temp_panel_path in enumerate(temp_panel_paths):
+            full_size_path = os.path.join(temp_dir, f"{base_filename}_panel_{i+1}.jpg")
+            panel_img = Image.open(temp_panel_path)
+            full_size_panel = panel_img.resize((1080, 1350), Image.Resampling.LANCZOS)
+            full_size_panel.save(full_size_path, "jpeg", quality=95)
+            output_paths.append(full_size_path)
+
+        # Create the final composite image
+        composite_path = os.path.join(temp_dir, f"{base_filename}_composite.jpg")
+        if not assemble_composite_image(temp_panel_paths, composite_path):
+            return None
+        output_paths.append(composite_path)
+
+        return output_paths
+    except Exception as e:
+        print(f"Error during final image generation: {e}")
+        return None
+    # Note: We are not cleaning up the temp_dir here because the main app needs
+    # access to the files for uploading. A more advanced app might handle this differently.
