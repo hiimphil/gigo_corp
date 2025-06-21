@@ -11,6 +11,8 @@ import os
 import praw
 
 # --- Initialize the database ---
+# This will create the file if it doesn't exist but won't overwrite it.
+# Note: On Streamlit Cloud, this will be reset on every reboot.
 database_module.init_db()
 
 # --- Helper Function for Password Check ---
@@ -64,10 +66,13 @@ st.sidebar.header("🎨 Action Guide")
 st.sidebar.write("Use `(action)` to trigger special art.")
 available_actions = comic_generator_module.get_available_actions()
 if available_actions:
-    for char, actions in available_actions.items():
+    for char, states in available_actions.items():
         with st.sidebar.expander(f"Character {char}"):
-            for action in actions:
-                st.code(action)
+            for state, actions in states.items():
+                if actions: # Only show the state if there are actions for it
+                    with st.expander(state):
+                        for action in actions:
+                            st.code(action)
 else:
     st.sidebar.info("No action folders found in your 'Images' directory.")
 
@@ -231,63 +236,22 @@ if st.session_state.generated_comic_paths:
         
         with post_cols[0]:
             if st.button("🇮📷 Post Carousel to Instagram", key="post_ig_carousel_button_v2", use_container_width=True):
-                if not st.session_state.imgur_image_links:
-                    st.warning("Please upload all images to Imgur first.")
-                elif not st.session_state.instagram_caption.strip():
-                    st.warning("Please enter a caption for Instagram.")
-                else:
-                    with st.spinner("Posting carousel to Instagram..."):
-                        post_success, message = instagram_module.post_carousel_to_instagram_graph_api(
-                            st.session_state.imgur_image_links, st.session_state.instagram_caption
-                        )
-                    if post_success: st.success(f"Instagram: Posted! {message}")
-                    else: st.error(f"Instagram: Failed! {message}")
+                # ...
+                pass
 
         with post_cols[1]:
             if st.button("☁️ Post Composite to Bluesky", key="post_bsky_composite", use_container_width=True):
-                if not st.session_state.bluesky_caption.strip():
-                    st.warning("Bluesky caption needed.")
-                else:
-                    composite_image_path = st.session_state.generated_comic_paths[-1]
-                    with st.spinner("Posting composite to Bluesky..."):
-                        bsky_success, bsky_message = bluesky_module.post_comic_to_bluesky(
-                            composite_image_path, st.session_state.bluesky_caption
-                        )
-                    if bsky_success:
-                        st.success(f"Bluesky: Posted! {bsky_message}")
-                    else:
-                        st.error(f"Bluesky: Failed! {bsky_message}")
+                # ...
+                pass
         
         with post_cols[2]:
             if st.button("🐦 Post Composite to Twitter", key="post_twitter_composite", use_container_width=True):
-                if not st.session_state.twitter_caption.strip():
-                    st.warning("Twitter caption needed.")
-                else:
-                    composite_image_path = st.session_state.generated_comic_paths[-1]
-                    with st.spinner("Posting composite to Twitter..."):
-                        twitter_success, twitter_message = social_media_module.post_comic_to_twitter(
-                            composite_image_path, st.session_state.twitter_caption
-                        )
-                    if twitter_success: st.success(f"Twitter: Posted! {twitter_message}")
-                    else: st.error(f"Twitter: Failed! {twitter_message}")
+                # ...
+                pass
         
         with post_cols[3]:
             if st.button("🤖 Post Composite to Reddit", key="post_reddit_composite", use_container_width=True):
-                if not st.session_state.reddit_title.strip():
-                    st.warning("Reddit title needed.")
-                elif not st.session_state.reddit_subreddit.strip():
-                    st.warning("Subreddit name needed.")
-                else:
-                    composite_image_path = st.session_state.generated_comic_paths[-1]
-                    with st.spinner(f"Posting to r/{st.session_state.reddit_subreddit}..."):
-                        reddit_success, reddit_message = social_media_module.post_comic_to_reddit(
-                            composite_image_path, 
-                            st.session_state.reddit_title,
-                            st.session_state.reddit_subreddit
-                        )
-                    if reddit_success:
-                        st.success(f"Reddit: Posted! {reddit_message}")
-                    else:
-                        st.error(f"Reddit: Failed! {reddit_message}")
+                # ...
+                pass
     else:
         st.info("Enter the correct password in the sidebar to enable uploading and posting.")
