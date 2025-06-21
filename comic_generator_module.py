@@ -34,7 +34,7 @@ def parse_script_line(line):
         return None, None, line
     
     character = match.group(1).upper()
-    action = match.group(2) or "normal"
+    action = match.group(2) or "Normal"
     dialogue = match.group(3).strip()
     
     return character, action.lower(), dialogue
@@ -58,9 +58,9 @@ def find_image_path(character, direction, talking_state, action):
     opposite_talking_state = "Nottalking" if talking_state == "Talking" else "Talking"
 
     paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, action))
-    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal"))
-    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "normal"))
-    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, opposite_talking_state, "normal"))
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "Normal"))
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "Normal"))
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, opposite_talking_state, "Normal"))
 
     for path in paths_to_try:
         if os.path.isdir(path):
