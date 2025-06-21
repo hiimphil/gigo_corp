@@ -6,7 +6,7 @@ import social_media_module
 import bluesky_module
 import instagram_module
 import imgur_uploader
-import database_module # Import our new database module
+import database_module
 import os
 import praw
 
@@ -59,7 +59,21 @@ is_admin = check_password()
 
 st.sidebar.divider()
 
-# --- SCRIPT LIBRARY (REFACTORED) ---
+# --- Action Guide ---
+st.sidebar.header("🎨 Action Guide")
+st.sidebar.write("Use `(action)` to trigger special art.")
+available_actions = comic_generator_module.get_available_actions()
+if available_actions:
+    for char, actions in available_actions.items():
+        with st.sidebar.expander(f"Character {char}"):
+            for action in actions:
+                st.code(action)
+else:
+    st.sidebar.info("No action folders found in your 'Images' directory.")
+
+st.sidebar.divider()
+
+# --- Script Library ---
 st.sidebar.header("📜 Script Library")
 saved_scripts = database_module.load_scripts()
 
@@ -78,14 +92,10 @@ if saved_scripts:
 else:
     st.sidebar.write("No saved scripts yet.")
 
-st.sidebar.divider()
-
-
 # --- Main Area ---
 st.header("📝 Script Editor")
 st.write("Write your 4-line comic script below. Use actions like (shocked) to change expressions.")
 
-# --- Text input for the script title ---
 st.session_state.script_title = st.text_input("Script Title:", st.session_state.script_title)
 
 st.session_state.current_script = st.text_area(
@@ -108,7 +118,6 @@ with save_col:
             )
             if success:
                 st.success(message)
-                # No rerun needed here, just a success message
             else:
                 st.error(message)
         else:
@@ -133,25 +142,19 @@ with ai_col:
 
 with preview_col:
     if st.button("🖼️ Generate Preview", use_container_width=True):
-        if not st.session_state.current_script or len(st.session_state.current_script.strip().split('\n')) != 4:
-            st.warning("Please ensure your script has exactly 4 lines.")
-        else:
-            with st.spinner("Generating preview..."):
-                try:
-                    # UPDATED to handle new return signature
-                    preview, error = comic_generator_module.generate_preview_image(st.session_state.current_script)
-                    
-                    if error:
-                        st.error(f"Preview Failed: {error}")
-                        st.session_state.preview_image = None
-                    else:
-                        st.session_state.preview_image = preview
-                    
-                    # Clear any old final files when a new preview is made
-                    st.session_state.generated_comic_paths = [] 
-                except Exception as e:
-                    st.error("An unexpected error occurred during preview generation.")
-                    st.exception(e)
+        with st.spinner("Generating preview..."):
+            try:
+                preview, error = comic_generator_module.generate_preview_image(st.session_state.current_script)
+                if error:
+                    st.error(f"Preview Failed: {error}")
+                    st.session_state.preview_image = None
+                else:
+                    st.session_state.preview_image = preview
+                st.session_state.generated_comic_paths = []
+            except Exception as e:
+                st.error("An unexpected error occurred during preview generation.")
+                st.exception(e)
+
 
 # --- Display Preview Image ---
 if st.session_state.preview_image:
@@ -163,9 +166,7 @@ if st.session_state.preview_image:
         if st.button("✅ Approve & Finalize", use_container_width=True):
             with st.spinner("Finalizing comic images..."):
                 try:
-                    # UPDATED to handle new return signature
                     final_paths, error = comic_generator_module.generate_comic_from_script_text(st.session_state.current_script)
-                    
                     if error:
                         st.error(f"Finalization Failed: {error}")
                         st.session_state.generated_comic_paths = []
@@ -174,7 +175,6 @@ if st.session_state.preview_image:
                         st.session_state.imgur_image_links = []
                         st.success("Final comic files generated successfully!")
                         st.rerun()
-
                 except Exception as e:
                     st.error("An unexpected error occurred during final generation.")
                     st.exception(e)
