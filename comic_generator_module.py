@@ -41,49 +41,62 @@ def parse_script_line(line):
 
 
 def determine_direction(current_char, prev_char):
-    """Determines which way the character should be looking."""
-    if not prev_char or current_char == prev_char:
-        return "Right" # Default direction
-    
-    # Define directional logic (can be expanded)
-    # Example: A looks left at C and D, but right at B
-    if current_char == 'A' and prev_char in ['C', 'D']:
-        return "Left"
-    if current_char == 'B' and prev_char in ['C', 'D']:
+    """Determines which way the character should be looking based on specific rules."""
+    # Character C is always facing Right.
+    if current_char == 'C':
+        return "Right"
+        
+    # Character B's default is Left.
+    if current_char == 'B':
         return "Left"
         
-    return "Right" # Default for all other interactions
+    # Character A's logic: defaults Right, but turns Left for C.
+    if current_char == 'A':
+        if prev_char == 'C':
+            return "Left"
+        else:
+            return "Right"
+            
+    # Default direction for any other character (like D) or initial panel.
+    return "Right"
 
 
 def find_image_path(character, direction, talking_state, action):
     """
     Builds a path to an image folder and selects a random image.
-    Falls back to 'Normal' if a specific action folder doesn't exist.
+    Includes robust fallbacks for missing folders.
     """
-    # Attempt to build the most specific path first
+    # 1. Attempt to build the most specific path first
     specific_path = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, action)
     
-    # Fallback to the 'normal' action if the specific one doesn't exist
+    # 2. If specific action folder doesn't exist, fall back to 'normal'
     if not os.path.isdir(specific_path):
         print(f"Info: Action folder '{specific_path}' not found. Falling back to 'Normal'.")
-        final_path = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal")
+        path_to_check = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal")
     else:
-        final_path = specific_path
+        path_to_check = specific_path
 
-    if not os.path.isdir(final_path):
-        print(f"--> ERROR: Base folder not found: '{final_path}'")
+    # 3. If the entire direction path doesn't exist, try the OTHER direction's normal folder
+    if not os.path.isdir(path_to_check):
+        print(f"Warning: Primary path '{path_to_check}' not found. Trying opposite direction.")
+        opposite_direction = "Left" if direction == "Right" else "Right"
+        path_to_check = os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "normal")
+
+    # 4. If we still can't find a valid folder, fail gracefully
+    if not os.path.isdir(path_to_check):
+        print(f"--> ERROR: Could not find any valid image folder for {character}/{talking_state}.")
         return None
 
-    # Get all .jpg images from the directory
+    # Get all .jpg images from the determined directory
     try:
-        images = [f for f in os.listdir(final_path) if f.lower().endswith('.jpg')]
+        images = [f for f in os.listdir(path_to_check) if f.lower().endswith('.jpg')]
         if not images:
-            print(f"--> ERROR: No JPG images found in '{final_path}'")
+            print(f"--> ERROR: No JPG images found in '{path_to_check}'")
             return None
         # Return the full path to a randomly selected image
-        return os.path.join(final_path, random.choice(images))
+        return os.path.join(path_to_check, random.choice(images))
     except Exception as e:
-        print(f"--> ERROR: Could not read directory '{final_path}': {e}")
+        print(f"--> ERROR: Could not read directory '{path_to_check}': {e}")
         return None
 
 
@@ -213,8 +226,9 @@ def generate_preview_image(comic_script_text):
             return img.copy()
     finally:
         # Clean up the temporary directory
-        import shutil
-        shutil.rmtree(temp_dir)
+        if temp_dir and os.path.exists(temp_dir):
+            import shutil
+            shutil.rmtree(temp_dir)
 
 
 def generate_comic_from_script_text(comic_script_text):
