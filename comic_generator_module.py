@@ -27,6 +27,32 @@ HEADER_TEXT_COLOR = "#6d7467"
 # --- End Configuration ---
 
 
+def get_available_actions():
+    """Scans the image directory to find all available actions for each character."""
+    actions = {}
+    if not os.path.isdir(IMAGE_BASE_PATH):
+        return actions
+
+    for char_folder in os.listdir(IMAGE_BASE_PATH):
+        char_path = os.path.join(IMAGE_BASE_PATH, char_folder)
+        if os.path.isdir(char_path) and len(char_folder) == 1: # Ensure it's a character folder like 'A', 'B', etc.
+            actions[char_folder] = set()
+            for direction_folder in os.listdir(char_path):
+                direction_path = os.path.join(char_path, direction_folder)
+                if os.path.isdir(direction_path):
+                    for state_folder in os.listdir(direction_path):
+                        state_path = os.path.join(direction_path, state_folder)
+                        if os.path.isdir(state_path):
+                            for action_folder in os.listdir(state_path):
+                                if os.path.isdir(os.path.join(state_path, action_folder)):
+                                    actions[char_folder].add(action_folder)
+    # Convert sets to sorted lists for consistent display
+    for char, action_set in actions.items():
+        actions[char] = sorted(list(action_set))
+        
+    return actions
+
+
 def parse_script_line(line):
     """Parses a single line into its character, action, and dialogue components."""
     match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
