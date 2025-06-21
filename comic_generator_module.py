@@ -66,38 +66,35 @@ def find_image_path(character, direction, talking_state, action):
     Builds a path to an image folder and selects a random image.
     Includes robust fallbacks for missing folders.
     """
-    # 1. Attempt to build the most specific path first
-    specific_path = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, action)
+    # 1. Build a list of potential paths in order of preference.
+    paths_to_try = []
+    opposite_direction = "Left" if direction == "Right" else "Right"
+    opposite_talking_state = "Nottalking" if talking_state == "Talking" else "Talking"
+
+    # Tier 1: The most specific path possible.
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, action))
+    # Tier 2: The 'normal' action in the correct direction.
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal"))
+    # Tier 3: The 'normal' action in the opposite direction (if primary direction folder doesn't exist).
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "normal"))
+    # Tier 4: The 'normal' action in the correct direction but opposite talking state (last resort).
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, opposite_talking_state, "normal"))
+
+    # 2. Iterate through the paths and find the first valid one with images.
+    for path in paths_to_try:
+        if os.path.isdir(path):
+            try:
+                images = [f for f in os.listdir(path) if f.lower().endswith('.jpg')]
+                if images:
+                    print(f"Success: Found image in '{path}'")
+                    return os.path.join(path, random.choice(images))
+            except Exception as e:
+                print(f"--> WARNING: Could not read directory '{path}': {e}")
+                continue
     
-    # 2. If specific action folder doesn't exist, fall back to 'normal'
-    if not os.path.isdir(specific_path):
-        print(f"Info: Action folder '{specific_path}' not found. Falling back to 'Normal'.")
-        path_to_check = os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal")
-    else:
-        path_to_check = specific_path
-
-    # 3. If the entire direction path doesn't exist, try the OTHER direction's normal folder
-    if not os.path.isdir(path_to_check):
-        print(f"Warning: Primary path '{path_to_check}' not found. Trying opposite direction.")
-        opposite_direction = "Left" if direction == "Right" else "Right"
-        path_to_check = os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "normal")
-
-    # 4. If we still can't find a valid folder, fail gracefully
-    if not os.path.isdir(path_to_check):
-        print(f"--> ERROR: Could not find any valid image folder for {character}/{talking_state}.")
-        return None
-
-    # Get all .jpg images from the determined directory
-    try:
-        images = [f for f in os.listdir(path_to_check) if f.lower().endswith('.jpg')]
-        if not images:
-            print(f"--> ERROR: No JPG images found in '{path_to_check}'")
-            return None
-        # Return the full path to a randomly selected image
-        return os.path.join(path_to_check, random.choice(images))
-    except Exception as e:
-        print(f"--> ERROR: Could not read directory '{path_to_check}': {e}")
-        return None
+    # 3. If no path was found, return None.
+    print(f"--> FATAL ERROR: Could not find any valid image for character '{character}'")
+    return None
 
 
 def process_script(script_text):
@@ -125,7 +122,6 @@ def process_script(script_text):
         
         if not image_path:
             print(f"FATAL: Could not find any image for line: '{line}'")
-            # You could add a fallback to a default placeholder image here if needed
             return None 
 
         panel_data.append({"image_path": image_path, "dialogue": dialogue})
