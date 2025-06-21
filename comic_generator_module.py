@@ -90,11 +90,11 @@ def find_image_path(character, direction, talking_state, action):
     # Tier 1: The most specific path possible (respecting case of action).
     paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, action))
     # Tier 2: The 'normal' action in the correct direction.
-    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "normal"))
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, talking_state, "Normal"))
     # Tier 3: The 'normal' action in the opposite direction.
-    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "normal"))
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, opposite_direction, talking_state, "Normal"))
     # Tier 4: The 'normal' action in the correct direction but opposite talking state.
-    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, opposite_talking_state, "normal"))
+    paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, direction, opposite_talking_state, "Normal"))
 
     for path in paths_to_try:
         if os.path.isdir(path):
