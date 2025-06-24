@@ -35,19 +35,22 @@ def get_available_actions():
 
     for char_folder in sorted(os.listdir(IMAGE_BASE_PATH)):
         char_path = os.path.join(IMAGE_BASE_PATH, char_folder)
-        if os.path.isdir(char_path) and len(char_folder) == 1:
-            action_data[char_folder] = {}
+        if os.path.isdir(char_path):
+            char_key = char_folder.lower()
+            action_data[char_key] = {}
             for state_folder in os.listdir(char_path):
                 state_path = os.path.join(char_path, state_folder)
-                if os.path.isdir(state_path) and state_folder in ["Talking", "Nottalking"]:
-                    action_data[char_folder][state_folder] = {}
+                state_key = state_folder.lower()
+                if os.path.isdir(state_path) and state_key in ["talking", "nottalking"]:
+                    action_data[char_key][state_key] = {}
                     for direction_folder in os.listdir(state_path):
                         direction_path = os.path.join(state_path, direction_folder)
+                        direction_key = direction_folder.lower()
                         if os.path.isdir(direction_path):
-                            action_data[char_folder][state_folder][direction_folder] = []
+                            action_data[char_key][state_key][direction_key] = []
                             for action_folder in os.listdir(direction_path):
                                 if os.path.isdir(os.path.join(direction_path, action_folder)):
-                                    action_data[char_folder][state_folder][direction_folder].append(action_folder)
+                                    action_data[char_key][state_key][direction_key].append(action_folder.lower())
 
     for char, states in action_data.items():
         for state, directions in states.items():
@@ -60,45 +63,42 @@ def get_available_actions():
 def parse_script_line(line):
     """
     Parses a single line into character, action, dialogue, and direction override.
-    Both actions and direction overrides are now fully case-insensitive.
+    All components are now fully case-insensitive and converted to lowercase.
     """
     match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
     if not match:
         return None, "normal", None, line
 
-    character = match.group(1).upper()
-    # Convert any action text to lowercase for consistency
+    character = match.group(1).lower()
     action_text = (match.group(2) or "normal").lower()
     dialogue = match.group(3).strip()
 
-    # Check for direction override
     direction_override = None
     if action_text in ["left", "right", "straight"]:
-        direction_override = action_text.capitalize()  # Standardize to Left, Right, Straight
-        action = "normal"  # If it's a direction, the action is normal
+        direction_override = action_text
+        action = "normal"
     else:
-        action = action_text  # Otherwise, it's a regular action (now lowercase)
+        action = action_text
 
     return character, action, direction_override, dialogue
 
 
 def determine_logical_direction(current_char, prev_char):
-    """Determines the 'logical' direction the character should be looking based on conversation rules."""
-    if current_char == 'C': return "Right"
-    if current_char == 'B': return "Left"
-    if current_char == 'A': return "Left" if prev_char == 'C' else "Right"
-    if current_char == 'D': return "Straight"
-    return "Straight"
+    """Determines the 'logical' direction the character should be looking, returning a lowercase string."""
+    if current_char == 'c': return "right"
+    if current_char == 'b': return "left"
+    if current_char == 'a': return "left" if prev_char == 'c' else "right"
+    if current_char == 'd': return "straight"
+    return "straight"
 
 
 def find_image_path(character, talking_state, direction, action):
     """
     Finds the best available image path with a robust fallback system.
-    The folder structure is: Character / State / Direction / action (lowercase)
-    Example: Images/A/Talking/Right/normal/image.jpg
+    The folder structure is now entirely lowercase.
+    Example: Images/a/talking/right/normal/image.jpg
     """
-    directions_to_try = [direction, "Straight", "Right", "Left"]
-    # The 'action' parameter is now always lowercase, as is the fallback 'normal'
+    directions_to_try = [direction, "straight", "right", "left"]
     actions_to_try = [action, "normal"]
     
     unique_directions = list(dict.fromkeys(directions_to_try))
@@ -107,7 +107,6 @@ def find_image_path(character, talking_state, direction, action):
     paths_to_try = []
     for d in unique_directions:
         for a in unique_actions:
-            # The action 'a' will now correctly match lowercase folder names (e.g., 'proud')
             paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, talking_state, d, a))
 
     for path in paths_to_try:
@@ -139,7 +138,7 @@ def process_script(script_text):
             return None, f"Could not parse line {line_num}: '{line}'"
 
         final_direction = direction_override or determine_logical_direction(character, previous_character)
-        talking_state = "Talking" if dialogue else "Nottalking"
+        talking_state = "talking" if dialogue else "nottalking"
         
         image_path, error = find_image_path(character, talking_state, final_direction, action)
         if error:
