@@ -11,6 +11,9 @@ import reddit_module # <-- New import
 import os
 import time
 
+import streamlit as st
+st.write(st.secrets.get("test_message", "Secrets file NOT loaded."))
+
 # --- Initialize the database ---
 database_module.init_db()
 
