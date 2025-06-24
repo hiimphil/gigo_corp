@@ -67,17 +67,17 @@ def parse_script_line(line):
     """
     match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
     if not match:
-        return None, "normal", None, line # Return defaults if no match
+        return None, "Normal", None, line # Return defaults if no match
 
     character = match.group(1).upper()
-    action_text = (match.group(2) or "normal").lower()
+    action_text = (match.group(2) or "Normal").lower()
     dialogue = match.group(3).strip()
 
     # Check if the action is a direction override
     direction_override = None
     if action_text in ["left", "right", "straight"]:
         direction_override = action_text.capitalize()
-        action = "normal" # If it's a direction, the action is normal
+        action = "Normal" # If it's a direction, the action is normal
     else:
         action = action_text # Otherwise, it's a regular action
 
