@@ -3,44 +3,69 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 import time
+import os # Import os for a more robust check
 
-# This function will initialize the Firebase connection.
-# It uses st.secrets to get the credentials, which is ideal for Streamlit Cloud.
 def init_db():
-    """Initializes the Firestore database connection."""
+    """Initializes the Firestore database connection with a robust credential fix."""
     try:
-        # Check if the app is already initialized to prevent errors on rerun
+        # Check if running on Streamlit Cloud
+        # The IS_STREAMLIT_CLOUD_DEPLOYMENT is a custom env var you can set in secrets
+        # But we can also just check for the existence of st.secrets
+        is_streamlit_cloud = hasattr(st, 'secrets')
+
         if not firebase_admin._apps:
-            # Get the credentials from Streamlit's secrets management
-            # The user needs to set this up in their Streamlit Cloud settings
-            creds_dict = st.secrets["firebase_credentials"]
-            cred = credentials.Certificate(creds_dict)
+            if not is_streamlit_cloud:
+                # Handle local development with a local file if secrets fail
+                # This provides a fallback for local testing
+                if os.path.exists('path/to/serviceAccountKey.json'):
+                     cred = credentials.Certificate('path/to/serviceAccountKey.json')
+                else:
+                     st.error("Running locally and service account JSON not found.")
+                     return None
+            else:
+                # This is the logic for Streamlit Cloud
+                creds_dict = st.secrets["firebase_credentials"]
+                
+                # --- START OF THE FIX ---
+                # The TOML parser in Streamlit's backend might be converting "\n" to a literal "\\n".
+                # We will manually replace any literal "\\n" with a proper newline character "\n".
+                # This makes our code resilient to the parsing ambiguity.
+                if "private_key" in creds_dict:
+                    creds_dict["private_key"] = creds_dict["private_key"].replace('\\n', '\n')
+                # --- END OF THE FIX ---
+                
+                cred = credentials.Certificate(creds_dict)
+
             firebase_admin.initialize_app(cred)
+
         return firestore.client()
-    except (KeyError, ValueError) as e:
-        # Provide a helpful error message if secrets are not set or are malformed
+        
+    except (KeyError, AttributeError):
         st.error("Firebase initialization failed. Please ensure 'firebase_credentials' are correctly set in st.secrets.")
+        return None
+    except ValueError as e:
+        st.error(f"A ValueError occurred during Firebase initialization, likely due to a malformed private key. Error: {e}")
+        # Let's print the structure one last time to be sure
+        if is_streamlit_cloud and "firebase_credentials" in st.secrets:
+            st.code(st.secrets['firebase_credentials'])
         return None
     except Exception as e:
         st.error(f"An unexpected error occurred during Firebase initialization: {e}")
         return None
 
-# Use st.cache_data to cache the script list. This prevents re-fetching from Firestore on every single interaction.
-# The cache will be cleared when we save or delete a script.
-@st.cache_data(ttl=3600) # Cache for 1 hour or until cleared
+
+@st.cache_data(ttl=3600)
 def load_scripts():
-    """Loads all scripts from the Firestore database, returns a dictionary of {title: script_text}."""
+    """Loads all scripts from the Firestore database."""
     db = init_db()
     if db is None:
         return {}
     
     scripts = {}
     try:
-        # Access the 'scripts' collection, order by title, and stream the documents
         docs = db.collection('scripts').order_by('title').stream()
         for doc in docs:
             script_data = doc.to_dict()
-            # Ensure both title and script_text exist before adding
             if 'title' in script_data and 'script_text' in script_data:
                 scripts[script_data['title']] = script_data['script_text']
         return scripts
@@ -58,17 +83,14 @@ def save_script(title, script_text):
         return False, "Title and script cannot be empty."
     
     try:
-        # Use the script's title as the document ID for easy lookup and overwriting.
-        # The .set() method creates the document if it doesn't exist, or overwrites it if it does.
         doc_ref = db.collection('scripts').document(title)
         doc_ref.set({
             'title': title,
             'script_text': script_text,
-            'created_at': firestore.SERVER_TIMESTAMP # Store a server-side timestamp
+            'created_at': firestore.SERVER_TIMESTAMP
         })
-        # Important: Clear the cache so the script list is reloaded with the new data.
         st.cache_data.clear()
-        return True, f"Script '{title}' saved successfully to Firestore."
+        return True, f"Script '{title}' saved successfully."
     except Exception as e:
         return False, f"Error saving script to Firestore: {e}"
 
@@ -82,10 +104,8 @@ def delete_script(title):
         return False, "Title cannot be empty."
         
     try:
-        # Delete the document with the given title (which is its ID).
         db.collection('scripts').document(title).delete()
-        # Important: Clear the cache so the script list is reloaded.
         st.cache_data.clear()
-        return True, f"Script '{title}' deleted successfully from Firestore."
+        return True, f"Script '{title}' deleted successfully."
     except Exception as e:
         return False, f"Error deleting script from Firestore: {e}"
