@@ -3,7 +3,6 @@ import os
 import requests
 from dotenv import load_dotenv
 import tweepy
-import praw # Import the Python Reddit API Wrapper
 
 # --- Shared Load Function ---
 load_dotenv() 
@@ -29,6 +28,7 @@ def post_comic_to_twitter(image_path, caption):
         return False, "Twitter credentials not fully configured."
 
     try:
+        # V1 API client for media upload
         auth_v1 = tweepy.OAuth1UserHandler(
             credentials["consumer_key"], credentials["consumer_secret"],
             credentials["access_token"], credentials["access_token_secret"]
@@ -38,6 +38,7 @@ def post_comic_to_twitter(image_path, caption):
         media = api_v1.media_upload(filename=image_path)
         media_id = media.media_id_string
         
+        # V2 API client for creating the tweet
         client_v2 = tweepy.Client(
             bearer_token=credentials["bearer_token"],
             consumer_key=credentials["consumer_key"],
@@ -48,44 +49,9 @@ def post_comic_to_twitter(image_path, caption):
         
         response = client_v2.create_tweet(text=caption, media_ids=[media_id])
         tweet_id = response.data['id']
-        return True, f"Tweet ID: {tweet_id}"
+        return True, f"https://twitter.com/user/status/{tweet_id}"
 
     except Exception as e:
         return False, f"An error occurred with Twitter: {e}"
 
-# --- Reddit Functions ---
-def load_reddit_credentials():
-    """Loads Reddit credentials from environment variables."""
-    creds = {
-        "client_id": os.getenv("REDDIT_CLIENT_ID"),
-        "client_secret": os.getenv("REDDIT_CLIENT_SECRET"),
-        "user_agent": os.getenv("REDDIT_USER_AGENT"),
-        "username": os.getenv("REDDIT_USERNAME"),
-        "password": os.getenv("REDDIT_PASSWORD"),
-    }
-    if not all(creds.values()):
-        return None
-    return creds
-
-def post_comic_to_reddit(image_path, title, subreddit_name):
-    """Uploads a single comic image to a specified subreddit."""
-    credentials = load_reddit_credentials()
-    if not credentials:
-        return False, "Reddit credentials not fully configured."
-        
-    try:
-        reddit = praw.Reddit(
-            client_id=credentials["client_id"],
-            client_secret=credentials["client_secret"],
-            user_agent=credentials["user_agent"],
-            username=credentials["username"],
-            password=credentials["password"],
-        )
-        
-        subreddit = reddit.subreddit(subreddit_name)
-        submission = subreddit.submit_image(title=title, image_path=image_path)
-        
-        return True, f"Post URL: {submission.shortlink}"
-
-    except Exception as e:
-        return False, f"An error occurred with Reddit: {e}"
+# Note: Reddit functions have been moved to reddit_module.py
