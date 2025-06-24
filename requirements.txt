@@ -8,3 +8,4 @@ tweepy
 atproto
 python-dotenv
 firebase-admin>=6.0.0
+praw
