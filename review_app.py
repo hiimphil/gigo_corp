@@ -10,9 +10,7 @@ import database_module
 import reddit_module # <-- New import
 import os
 import time
-
 import streamlit as st
-st.write(st.secrets.get("test_message", "Secrets file NOT loaded."))
 
 # --- Initialize the database ---
 database_module.init_db()
@@ -59,44 +57,6 @@ if 'reddit_subreddit' not in st.session_state: st.session_state.reddit_subreddit
 # --- Sidebar ---
 st.sidebar.header("🔑 Admin Access")
 is_admin = check_password()
-# Add this to review_app.py in the sidebar
-
-# --- START OF CORRECTED DEBUGGING SNIPPET ---
-if is_admin:
-    with st.sidebar.expander("🕵️‍♀️ Secrets Inspector v2", expanded=True):
-        st.info("This shows the first/last 35 characters of the private key to check for hidden formatting errors.")
-        try:
-            creds = st.secrets["firebase_credentials"]
-            st.success("Found 'firebase_credentials' section.")
-
-            output = "Inspecting the dictionary structure:\n\n"
-            required_keys = ["type", "project_id", "private_key_id", "private_key", "client_email", "client_id"]
-
-            for key in required_keys:
-                if key not in creds:
-                    output += f"❌ MISSING KEY: '{key}'\n"
-                else:
-                    value = creds.get(key)
-                    val_type = type(value).__name__
-
-                    if key == "private_key":
-                        # This line is now CORRECTED to add the preview
-                        if value and isinstance(value, str) and len(value) > 70:
-                            val_preview = f"'{value[:35]}...{value[-35:]}'"
-                            output += f"✅ Key: '{key}', Type: {val_type}\n   Preview: {val_preview}\n"
-                        else:
-                             output += f"✅ Key: '{key}', Type: {val_type}, Value is short, empty, or not a string.\n"
-                    else:
-                        output += f"✅ Key: '{key}', Type: {val_type}, Value: '{value}'\n"
-
-            st.code(output, language="text")
-
-        except Exception as e:
-            st.error("Could not read or parse 'firebase_credentials' section.")
-            st.exception(e)
-# --- END OF CORRECTED DEBUGGING SNIPPET ---
-
-st.sidebar.divider()
 st.sidebar.divider()
 
 # --- Action Guide ---
