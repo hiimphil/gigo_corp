@@ -59,6 +59,44 @@ if 'reddit_subreddit' not in st.session_state: st.session_state.reddit_subreddit
 # --- Sidebar ---
 st.sidebar.header("🔑 Admin Access")
 is_admin = check_password()
+# Add this to review_app.py
+
+st.sidebar.header("🔑 Admin Access")
+is_admin = check_password()
+
+# --- START OF DEBUGGING SNIPPET ---
+if is_admin:
+    with st.sidebar.expander("🕵️‍♀️ Secrets Inspector", expanded=True):
+        try:
+            creds = st.secrets["firebase_credentials"]
+            st.success("Found 'firebase_credentials' section in secrets.")
+            
+            output = "Inspecting the dictionary structure:\n\n"
+            
+            required_keys = ["type", "project_id", "private_key_id", "private_key", "client_email", "client_id"]
+            
+            for key in required_keys:
+                if key not in creds:
+                    output += f"❌ MISSING KEY: '{key}'\n"
+                else:
+                    value = creds[key]
+                    val_type = type(value).__name__
+                    
+                    if key == "private_key":
+                        # Don't display the full key for security
+                        val_preview = f"'{value[:30]}...{value[-30:]}'"
+                        output += f"✅ Key: '{key}', Type: {val_type}\n"
+                    else:
+                        output += f"✅ Key: '{key}', Type: {val_type}, Value: '{value}'\n"
+            
+            st.code(output, language="text")
+
+        except Exception as e:
+            st.error("Could not read or parse 'firebase_credentials' section.")
+            st.exception(e)
+# --- END OF DEBUGGING SNIPPET ---
+
+st.sidebar.divider()
 st.sidebar.divider()
 
 # --- Action Guide ---
