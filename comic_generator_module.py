@@ -33,25 +33,22 @@ def get_available_actions():
     if not os.path.isdir(IMAGE_BASE_PATH):
         return action_data
 
-    # Use sorted list to ensure characters appear in order (A, B, C...)
     for char_folder in sorted(os.listdir(IMAGE_BASE_PATH)):
         char_path = os.path.join(IMAGE_BASE_PATH, char_folder)
         if os.path.isdir(char_path) and len(char_folder) == 1:
-            action_data[char_folder] = {} # e.g. {'A': {}}
-            for state_folder in os.listdir(char_path): # Talking, Nottalking
+            action_data[char_folder] = {}
+            for state_folder in os.listdir(char_path):
                 state_path = os.path.join(char_path, state_folder)
                 if os.path.isdir(state_path) and state_folder in ["Talking", "Nottalking"]:
-                    action_data[char_folder][state_folder] = {} # e.g. {'A': {'Talking': {}}}
+                    action_data[char_folder][state_folder] = {}
                     for direction_folder in os.listdir(state_path):
                         direction_path = os.path.join(state_path, direction_folder)
                         if os.path.isdir(direction_path):
-                             # e.g. {'A': {'Talking': {'Left': []}}}
                             action_data[char_folder][state_folder][direction_folder] = []
                             for action_folder in os.listdir(direction_path):
                                 if os.path.isdir(os.path.join(direction_path, action_folder)):
                                     action_data[char_folder][state_folder][direction_folder].append(action_folder)
 
-    # Sort actions for consistent display
     for char, states in action_data.items():
         for state, directions in states.items():
             for direction, actions in directions.items():
@@ -63,23 +60,24 @@ def get_available_actions():
 def parse_script_line(line):
     """
     Parses a single line into character, action, dialogue, and direction override.
-    Action is anything in parentheses. Direction overrides like (left) are now handled separately.
+    Both actions and direction overrides are now fully case-insensitive.
     """
     match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
     if not match:
-        return None, "Normal", None, line # Return defaults if no match
+        return None, "normal", None, line
 
     character = match.group(1).upper()
-    action_text = (match.group(2) or "Normal").lower()
+    # Convert any action text to lowercase for consistency
+    action_text = (match.group(2) or "normal").lower()
     dialogue = match.group(3).strip()
 
-    # Check if the action is a direction override
+    # Check for direction override
     direction_override = None
     if action_text in ["left", "right", "straight"]:
-        direction_override = action_text.capitalize()
-        action = "Normal" # If it's a direction, the action is normal
+        direction_override = action_text.capitalize()  # Standardize to Left, Right, Straight
+        action = "normal"  # If it's a direction, the action is normal
     else:
-        action = action_text # Otherwise, it's a regular action
+        action = action_text  # Otherwise, it's a regular action (now lowercase)
 
     return character, action, direction_override, dialogue
 
@@ -90,49 +88,44 @@ def determine_logical_direction(current_char, prev_char):
     if current_char == 'B': return "Left"
     if current_char == 'A': return "Left" if prev_char == 'C' else "Right"
     if current_char == 'D': return "Straight"
-    return "Straight" # Default fallback
+    return "Straight"
 
 
 def find_image_path(character, talking_state, direction, action):
     """
     Finds the best available image path with a robust fallback system.
-    The new folder structure is: Character / State / Direction / Action
-    Example: Images/A/Talking/Right/Normal/image.jpg
+    The folder structure is: Character / State / Direction / action (lowercase)
+    Example: Images/A/Talking/Right/normal/image.jpg
     """
-    # Define the primary and fallback folder names
     directions_to_try = [direction, "Straight", "Right", "Left"]
-    actions_to_try = [action, "Normal"]
+    # The 'action' parameter is now always lowercase, as is the fallback 'normal'
+    actions_to_try = [action, "normal"]
     
-    # Remove duplicates while preserving order
     unique_directions = list(dict.fromkeys(directions_to_try))
     unique_actions = list(dict.fromkeys(actions_to_try))
 
-    # Build a list of paths to try, from most specific to most general
     paths_to_try = []
     for d in unique_directions:
         for a in unique_actions:
+            # The action 'a' will now correctly match lowercase folder names (e.g., 'proud')
             paths_to_try.append(os.path.join(IMAGE_BASE_PATH, character, talking_state, d, a))
 
-    # Attempt to find a valid image in the generated paths
     for path in paths_to_try:
         if os.path.isdir(path):
             try:
                 images = [f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
                 if images:
-                    # Found a valid image, return its full path
                     return os.path.join(path, random.choice(images)), None
             except Exception as e:
-                # Log a warning but continue trying other paths
                 print(f"--> WARNING: Could not read directory '{path}': {e}")
                 continue
     
-    # If no image was found after all fallbacks, return an error
     error_msg = f"No valid image found for Char: {character}, State: {talking_state}, trying Dir: {direction}, Act: {action}"
     return None, error_msg
 
 
 def process_script(script_text):
-    """Processes a script and returns panel data or an error message, using the new logic."""
+    """Processes a script and returns panel data or an error message."""
     panel_data = []
     previous_character = None
     lines = script_text.strip().split('\n')
@@ -145,16 +138,11 @@ def process_script(script_text):
         if not character:
             return None, f"Could not parse line {line_num}: '{line}'"
 
-        # Determine direction: use override if present, otherwise use logic
         final_direction = direction_override or determine_logical_direction(character, previous_character)
-        
-        # Determine talking state
         talking_state = "Talking" if dialogue else "Nottalking"
         
-        # Find the image using the new robust find function
         image_path, error = find_image_path(character, talking_state, final_direction, action)
         if error:
-            # Provide a more user-friendly error message
             return None, f"Image Error on line {line_num} ('{line}'): {error}. Check your 'Images' folder structure and file names."
 
         panel_data.append({"image_path": image_path, "dialogue": dialogue})
@@ -231,7 +219,6 @@ def _generate_images(script_text):
     for i, panel in enumerate(panel_data):
         path, error = create_panel_image(panel['image_path'], panel['dialogue'], i, temp_dir)
         if error:
-            # Clean up temp directory on failure
             import shutil
             shutil.rmtree(temp_dir)
             return None, None, error
@@ -273,12 +260,10 @@ def generate_comic_from_script_text(comic_script_text):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         base_filename = f"{OUTPUT_FILENAME_PREFIX}{timestamp}"
         
-        # We will save the final files to a persistent 'Output_Comics' directory
         output_dir = "Output_Comics"
         os.makedirs(output_dir, exist_ok=True)
         
         output_paths = []
-        # First, the four full-size individual panels
         for i, temp_panel_path in enumerate(temp_panel_paths):
             full_size_path = os.path.join(output_dir, f"{base_filename}_panel_{i+1}.jpg")
             panel_img = Image.open(temp_panel_path)
@@ -286,19 +271,16 @@ def generate_comic_from_script_text(comic_script_text):
             full_size_panel.save(full_size_path, "jpeg", quality=95)
             output_paths.append(full_size_path)
 
-        # Then, the composite image
         composite_path = os.path.join(output_dir, f"{base_filename}_composite.jpg")
         success, error = assemble_composite_image(temp_panel_paths, composite_path)
         if not success:
             return None, error
-        # The composite is the last image in the list
         output_paths.append(composite_path)
 
         return output_paths, None
     except Exception as e:
         return None, f"Error during final image generation: {e}"
     finally:
-        # Clean up the temporary directory
         if temp_dir and os.path.exists(temp_dir):
             import shutil
             shutil.rmtree(temp_dir)
