@@ -9,27 +9,23 @@ def init_db():
     """Initializes the Firestore database connection with a robust credential fix."""
     try:
         # Check if running on Streamlit Cloud
-        # The IS_STREAMLIT_CLOUD_DEPLOYMENT is a custom env var you can set in secrets
-        # But we can also just check for the existence of st.secrets
         is_streamlit_cloud = hasattr(st, 'secrets')
 
         if not firebase_admin._apps:
             if not is_streamlit_cloud:
                 # Handle local development with a local file if secrets fail
-                # This provides a fallback for local testing
                 if os.path.exists('path/to/serviceAccountKey.json'):
                      cred = credentials.Certificate('path/to/serviceAccountKey.json')
                 else:
                      st.error("Running locally and service account JSON not found.")
                      return None
             else:
-                # This is the logic for Streamlit Cloud
-                creds_dict = st.secrets["firebase_credentials"]
-                
                 # --- START OF THE FIX ---
-                # The TOML parser in Streamlit's backend might be converting "\n" to a literal "\\n".
-                # We will manually replace any literal "\\n" with a proper newline character "\n".
-                # This makes our code resilient to the parsing ambiguity.
+                # The object from st.secrets is immutable. We must create a mutable copy of it first.
+                creds_dict = dict(st.secrets["firebase_credentials"])
+
+                # The TOML parser might convert "\n" to a literal "\\n".
+                # We will manually replace this in our mutable copy.
                 if "private_key" in creds_dict:
                     creds_dict["private_key"] = creds_dict["private_key"].replace('\\n', '\n')
                 # --- END OF THE FIX ---
