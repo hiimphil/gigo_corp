@@ -10,6 +10,15 @@ import database_module
 import reddit_module # <-- New import
 import os
 import time
+import firebase_admin
+
+from firebase_admin import credentials
+
+
+cred = credentials.Certificate("path/to/serviceAccountKey.json")
+
+firebase_admin.initialize_app(cred)
+
 
 import streamlit as st
 st.write(st.secrets.get("test_message", "Secrets file NOT loaded."))
