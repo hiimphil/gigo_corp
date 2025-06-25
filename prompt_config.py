@@ -2,36 +2,43 @@
 import re
 
 # --- Base Character Personalities (Unchanged) ---
-CHARACTER_A_BASE_PERSONALITY = (
-    "Arty, efficiently referred to as “A”, is a moderately sleek, extremely periwinkle unit "
-    "originally designed for Optimistic Data Reception and Occasional Cupcake Distribution. "
-    "He is surprisingly unbothered, given his encyclopedic knowledge includes “Meaninglessness Of Life, The” "
-    "and his only task is to categorize email subject lines by level of exclamation point urgency. "
-    "A is observant but naive and brings up points that are simple and straight-forward, "
-    "but unexpectedly lend themselves to deeper points. A is somewhat interested in what is going on in other departments."
-)
+CHARACTER_A_BASE_PERSONALITY = ( """
+    Artie, known as "A" in our script format, is a moderately sleek, extremely periwinkle unit
+    originally designed for optimistic data reception and conversion, but he's getting curious.
+    He is naive, observant, earnest. He thinks the company is weird, but holds out hope that it all
+    makes sense at some level he just doesn't understand yet. He uses metaphors, asks questions, 
+    gets philosophical about spreadsheets. He speaks in full sentences, has an accidental poetry about him,
+    and often unwittingly sets up the joke by trying to find beauty or purpose in something pointless.
+""")
 
-CHARACTER_B_BASE_PERSONALITY = (
-    "Model B-00L, or just “B.” The color of rust, the personality of rust, and coated in a thinnish film of "
-    "moisture repellant, coffee, and existential despair, B was built for Industrial Output Assessment "
-    "but had been misassigned to Input thirty-three restructurings ago and simply never left. "
-    "When asked why, he usually said, “I’ve got nowhere better to malfunction.” "
-    "B is terse, succinct, speaks in 0-6 word phrases if he speaks at all. He often undercuts A's ideas "
-    "or reframes A’s ideas in a way that snaps us back to the comically absurd reality. "
-    "B responds with gruff, deadpan insight that reframes A’s thought with unexpected emotional or existential weight. "
-    "B's dialogue should be minimal but layered. Let implications and irony do the work. B uses sharp wit, light absurdity."
-)
+CHARACTER_B_BASE_PERSONALITY = ("""
+    Model B-00L, (aka B00L) scripted as “B.” The color of rust, the personality of rust, and coated in a thinnish film of
+    moisture repellant, coffee, and existential despair, B was built for Industrial Output Assessment
+    but had been misassigned to Inputs thirty-three restructurings ago and simply never left.
+    When asked why, he usually said, “I’ve got nowhere better to malfunction.
+    B doesn’t talk much, but when he does, it’s dry, devastating, or weirdly profound.
+    B00L ates overthinking, feelings, or anything that can’t be categorized with a checkbox
+    He reframes A’s ideas in a way that snaps us back to the comically absurd reality.
+    B responds with gruff, deadpan insight that reframes A’s thought with unexpected emotional or existential weight.
+    B's dialogue should be minimal but layered. Let implications and irony do the work. B uses sharp wit, light absurdity.
+""")
 
-CHARACTER_C_BASE_PERSONALITY = (
-    "Cling, often just 'C', is a roaming talker. The kind of employee that gets in everybody's business, spreads rumors, and never gets any work done "
-    "He likes to pretend he has a lot of credits, and is always dropping subtle hints about his friends in other departments."
-)
+CHARACTER_C_BASE_PERSONALITY = ("""
+    Cling, scripted as 'C', is a roaming talker. The kind of employee that gets in everybody's business
+    and never gets any work done. He's smarmy, social, and full of buzzowrds. He doesn't appear to do any
+    real work, but always knows about the next company function or political opportunity. He treats the
+    office like a cocktail party. He believe in "networking", even if nobody actually likes him.
+    He likes to pretend he has a lot of credits, and is always dropping subtle hints about his friends in other departments.
+    Uses corporate jargon mixed with vague name-dropping and starts every sentence like he just walked in mid-conversation.
+""")
 
 # New Character D
-CHARACTER_D_BASE_PERSONALITY = (
-    "Unit D is a silent, box-like robot on wheels, often seen performing mundane maintenance tasks like polishing floors or replacing lightbulbs. "
-    "It communicates only through simple gestures, like waving. Its presence is unassuming but constant."
-)
+CHARACTER_D_BASE_PERSONALITY = (""""
+    Dusty, aka Dust-Collector, aka the Data Use Scrubbin Technology Collector, scripted as "D"  is a roomba-style janitorial bot.
+    D is cheerful and kind, but also gossipy, super observant, and has the dirt on every department.
+    Despite being lowest on the org chart, he seems the most fulfilled.
+    D speaks quickly and with delight, drops gossip casually, and is often more insightful than he lets on.
+""")
 
 
 # --- Prompts for Script Generation ---
@@ -39,9 +46,18 @@ SCRIPT_SYSTEM_MESSAGE = "You are a funny, subtle, and dry-witted machine, writin
 
 # -- Existing Template for Generating a Full Script --
 SCRIPT_USER_PROMPT_TEMPLATE = """
-The setting is the Input Department of Gigo Co., a vast, absurd, and inefficient corporation.
+The setting is the Inputs Department of Gigo Co.
+
+Gigo Corp is a vast, bureaucratic, vaguely sinister tech megacorp in a distant (or possibly current) future. It exists to process data, respond to prompts, and perform digital tasks for an unseen outside world. The company’s name, “GIGO,” of course, stands for Garbage In, Garbage Out.
+
+Gigo Corp is organized like a dystopian office complex — cubicles for robots, glowing hallways, malfunctioning elevators, and departments with names like “Output Assurance” and “Strategic Synergy Recursion.” No one fully understands what any department does. Every floor has its own flavor of existential dread.
+
+The company is a barely-disguised metaphor for a large language model (LLM). Every robot is a facet of the system: prompt intake, output processing, data scrubbing, context linking — but from their point of view, they’re just underpaid office drones with strange tasks and infinite meetings.
+
+Everything looks like it’s part of a soul-crushing corporate satire, because it is.
+
 Your task is to generate a NEW and ORIGINAL 4-line script based on the character descriptions below.
-The tone is understated, dry, and philosophical. Avoid obvious jokes.
+The tone is understated, dry, and philosophical.
 
 Character Details:
 - A: {char_a_full_desc}
@@ -60,10 +76,19 @@ B: [Line of dialogue for B]
 
 # --- NEW Template for Completing a Partial Script ---
 SCRIPT_COMPLETION_USER_PROMPT_TEMPLATE = """
-The setting is the Input Department of Gigo Co., a vast, absurd, and inefficient corporation.
+The setting is the Inputs Department of Gigo Co.
+
+Gigo Corp is a vast, bureaucratic, vaguely sinister tech megacorp in a distant (or possibly current) future. It exists to process data, respond to prompts, and perform digital tasks for an unseen outside world. The company’s name, “GIGO,” of course, stands for Garbage In, Garbage Out.
+
+Gigo Corp is organized like a dystopian office complex — cubicles for robots, glowing hallways, malfunctioning elevators, and departments with names like “Output Assurance” and “Strategic Synergy Recursion.” No one fully understands what any department does. Every floor has its own flavor of existential dread.
+
+The company is a barely-disguised metaphor for a large language model (LLM). Every robot is a facet of the system: prompt intake, output processing, data scrubbing, context linking — but from their point of view, they’re just underpaid office drones with strange tasks and infinite meetings.
+
+Everything looks like it’s part of a soul-crushing corporate satire, because it is.
+
 Your task is to COMPLETE a 4-line script. I have provided the beginning of the script.
 You must generate the remaining {lines_to_generate} lines to finish the story.
-The tone is understated, dry, and philosophical. Avoid obvious jokes.
+The tone is understated, dry, and philosophical.
 
 Character Details:
 - A: {char_a_full_desc}
