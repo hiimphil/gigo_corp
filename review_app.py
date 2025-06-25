@@ -8,7 +8,8 @@ import instagram_module
 import imgur_uploader
 import database_module
 import reddit_module
-import tts_module # <-- New import for Text-to-Speech
+import tts_module
+import video_module # <-- New import for Video Generation
 import os
 import time
 
@@ -42,21 +43,19 @@ if 'script_title' not in st.session_state: st.session_state.script_title = "My F
 if 'preview_image' not in st.session_state: st.session_state.preview_image = None
 if 'generated_comic_paths' not in st.session_state: st.session_state.generated_comic_paths = []
 if 'imgur_image_links' not in st.session_state: st.session_state.imgur_image_links = []
-if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {} # <-- New state for audio
+if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
+if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None # <-- New state for video
 
 # --- Social Media State ---
 default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
 if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
-if 'bluesky_caption' not in st.session_state: st.session_state.bluesky_caption = default_caption
-if 'twitter_caption' not in st.session_state: st.session_state.twitter_caption = default_caption
-if 'reddit_title' not in st.session_state: st.session_state.reddit_title = "Gigo Corp Comic"
-if 'reddit_subreddit' not in st.session_state: st.session_state.reddit_subreddit = "GigoCorp"
+# ... (rest of social media state is unchanged)
 
 # --- Sidebar ---
+# ... (Sidebar is unchanged) ...
 st.sidebar.header("🔑 Admin Access")
 is_admin = check_password()
 st.sidebar.divider()
-# ... (rest of the sidebar is unchanged) ...
 st.sidebar.header("🎨 Action Guide")
 st.sidebar.write("Use `(action)` or `(direction)` in a script line.")
 st.sidebar.code("A:(left) Hi!\nB:(shocked) Hello.")
@@ -65,17 +64,15 @@ if available_actions:
     for char, states in available_actions.items():
         with st.sidebar.expander(f"Character {char} Actions"):
             for state, directions in states.items():
-                st.write(f"**{state}:**")
+                st.write(f"**{state.capitalize()}:**")
                 for direction, actions in directions.items():
                     if actions:
-                        st.write(f"- _{direction}_: {', '.join(actions)}")
+                        st.write(f"- _{direction.capitalize()}_: {', '.join(actions)}")
 else:
     st.sidebar.info("No action folders found in your 'Images' directory.")
 st.sidebar.divider()
-
 st.sidebar.header("📜 Script Library")
 saved_scripts = database_module.load_scripts() 
-
 if saved_scripts:
     script_to_load = st.sidebar.selectbox("Select a script:", options=list(saved_scripts.keys()), index=None, placeholder="-- Choose a script to load --")
     load_col, delete_col = st.sidebar.columns(2)
@@ -92,6 +89,14 @@ if saved_scripts:
             else: st.sidebar.warning("Select a script and be an admin.")
 else:
     st.sidebar.write("No saved scripts in Firestore yet.")
+
+def reset_downstream_state():
+    """Resets all generated content when the script changes."""
+    st.session_state.preview_image = None
+    st.session_state.generated_comic_paths = []
+    st.session_state.generated_audio_paths = {}
+    st.session_state.final_cartoon_path = None
+    st.session_state.imgur_image_links = []
 
 
 # --- Main Area ---
@@ -114,16 +119,16 @@ with col2:
             new_script = ai_script_module.generate_ai_script(partial_script=st.session_state.current_script)
             if new_script and not new_script.startswith("Error:"):
                 st.session_state.current_script = new_script
-                st.session_state.preview_image = None; st.session_state.generated_comic_paths = []; st.session_state.generated_audio_paths = {}
+                reset_downstream_state()
                 st.rerun()
             else: st.error(f"AI Failed: {new_script}")
 
 with col3:
     if st.button("🖼️ Generate Preview", use_container_width=True):
-        st.session_state.generated_comic_paths = []; st.session_state.generated_audio_paths = {}
+        reset_downstream_state()
         with st.spinner("Generating preview..."):
             preview, error = comic_generator_module.generate_preview_image(st.session_state.current_script)
-            if error: st.error(f"Preview Failed: {error}"); st.session_state.preview_image = None
+            if error: st.error(f"Preview Failed: {error}")
             else: st.session_state.preview_image = preview
 
 if st.session_state.preview_image:
@@ -131,52 +136,59 @@ if st.session_state.preview_image:
     st.header("👀 Preview")
     st.image(st.session_state.preview_image, use_container_width=True)
     with col4:
-        if st.button("✅ Approve & Finalize", use_container_width=True, type="primary"):
-            st.session_state.generated_audio_paths = {} # Clear old audio
+        if st.button("✅ Approve & Finalize Comic", use_container_width=True, type="primary"):
             with st.spinner("Finalizing comic images..."):
                 final_paths, error = comic_generator_module.generate_comic_from_script_text(st.session_state.current_script)
-                if error: st.error(f"Finalization Failed: {error}"); st.session_state.generated_comic_paths = []
-                else: st.session_state.generated_comic_paths = final_paths; st.session_state.imgur_image_links = []; st.success("Final comic files generated!"); st.rerun()
+                if error: st.error(f"Finalization Failed: {error}")
+                else: st.session_state.generated_comic_paths = final_paths; st.success("Final comic files generated!"); st.rerun()
     st.divider()
 
-# --- NEW SECTION: Audio Generation ---
-if st.session_state.generated_comic_paths and is_admin:
-    st.header("🔊 Audio Generation")
+# --- NEW WORKFLOW: Cartoon Generation ---
+st.header("🎬 Cartoon Generation")
+tabs = st.tabs(["Step 1: Generate Audio", "Step 2: Generate Video"])
 
-    # Display the audio generation button
-    if st.button("🎤 Generate Audio for Script", use_container_width=True):
-        audio_paths = {}
-        lines = st.session_state.current_script.strip().split('\n')
-        with st.spinner("Generating audio for each line..."):
+with tabs[0]:
+    st.subheader("🎤 Generate Audio for Script")
+    if not st.session_state.current_script.strip():
+        st.info("Write a script first.")
+    else:
+        if st.button("Generate Audio", use_container_width=True):
+            st.session_state.final_cartoon_path = None # Reset old video
+            audio_paths = {}
+            lines = st.session_state.current_script.strip().split('\n')
+            with st.spinner("Generating audio for each line..."):
+                for i, line in enumerate(lines):
+                    char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                    if char and dialogue:
+                        path, error = tts_module.generate_speech_for_line(char, dialogue)
+                        if error: st.error(f"Audio failed: {error}"); audio_paths = {}; break
+                        audio_paths[i] = path
+                    else: audio_paths[i] = None
+                st.session_state.generated_audio_paths = audio_paths
+                if audio_paths: st.success("Audio generated!")
+
+        if st.session_state.generated_audio_paths:
+            st.write("---")
+            lines = st.session_state.current_script.strip().split('\n')
             for i, line in enumerate(lines):
-                # We need to parse the line to get the character and dialogue
-                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
-                if char and dialogue:
-                    path, error = tts_module.generate_speech_for_line(char, dialogue)
-                    if error:
-                        st.error(f"Audio failed for line {i+1}: {error}")
-                        audio_paths = {} # Clear results on failure
-                        break
-                    audio_paths[i] = path # Store path with line index
-                else:
-                    audio_paths[i] = None # Represents a pause
-            
-            st.session_state.generated_audio_paths = audio_paths
-            if audio_paths:
-                st.success("Audio generated for all lines!")
+                st.write(f"**Line {i+1}:** *{line.strip()}*")
+                if path := st.session_state.generated_audio_paths.get(i): st.audio(path)
+                else: st.info("_(No dialogue)_")
 
-    # Display the generated audio files
-    if st.session_state.generated_audio_paths:
-        st.subheader("Playback Script Audio")
-        lines = st.session_state.current_script.strip().split('\n')
-        for i, line in enumerate(lines):
-            st.write(f"**Line {i+1}:** *{line.strip()}*")
-            audio_path = st.session_state.generated_audio_paths.get(i)
-            if audio_path:
-                st.audio(audio_path)
-            else:
-                st.info("_(This line has no dialogue.)_")
-        st.divider()
+with tabs[1]:
+    st.subheader("📽️ Assemble Final Cartoon")
+    if not st.session_state.generated_audio_paths:
+        st.info("Generate audio in Step 1 before creating the video.")
+    else:
+        if st.button("Generate Cartoon Video", use_container_width=True, type="primary"):
+            with st.spinner("Assembling cartoon... This can take a minute!"):
+                video_path, error = video_module.create_video_from_script(st.session_state.current_script, st.session_state.generated_audio_paths)
+                if error: st.error(f"Video Failed: {error}")
+                else: st.session_state.final_cartoon_path = video_path
+
+    if st.session_state.final_cartoon_path:
+        st.success("Cartoon generated successfully!")
+        st.video(st.session_state.final_cartoon_path)
 
 if st.session_state.generated_comic_paths:
     st.header("🚀 Final Files & Posting")
