@@ -3,9 +3,9 @@ import re
 
 # --- Base Character Personalities (Unchanged) ---
 CHARACTER_A_BASE_PERSONALITY = ( """
-    Artie, known as "A" in our script format, is a newer employee, and is finding new reasons to be disappointed
-    with Gigo Corp every day. He is observant and curious. He thinks the company is a disaster, 
-    but holds out hope that it all makes sense at some level he just doesn't understand yet.
+    Artie, known as "A" in our script format, is a newer employee, and is finding specific new reasons to be disappointed
+    with Gigo Corp every day. He is observant of the details, asks questions about other (random) departments. He is slowly  
+    realizing tha the company is a disaster, but that knowledge hasn't let him give up trying for it to make sense yet.
 """)
 
 CHARACTER_B_BASE_PERSONALITY = ("""
