@@ -6,9 +6,7 @@ CHARACTER_A_BASE_PERSONALITY = ( """
     Artie, known as "A" in our script format, is a moderately sleek, extremely periwinkle unit
     originally designed for optimistic data reception and conversion, but he's getting curious.
     He is naive, observant, earnest. He thinks the company is weird, but holds out hope that it all
-    makes sense at some level he just doesn't understand yet. He uses metaphors, asks questions, 
-    gets philosophical about spreadsheets. He speaks in full sentences, has an accidental poetry about him,
-    and often unwittingly sets up the joke by trying to find beauty or purpose in something pointless.
+    makes sense at some level he just doesn't understand yet.
 """)
 
 CHARACTER_B_BASE_PERSONALITY = ("""
