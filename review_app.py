@@ -1,9 +1,6 @@
 # review_app.py
-import subprocess
 import os
-
-if os.path.exists("setup.sh"):
-    subprocess.run(["bash", "setup.sh"])
+os.environ['MAGICK_CONFIGURE_PATH'] = '.'
 
 import streamlit as st
 import comic_generator_module
