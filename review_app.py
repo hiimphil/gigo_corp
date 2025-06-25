@@ -1,4 +1,10 @@
 # review_app.py
+import subprocess
+import os
+
+if os.path.exists("setup.sh"):
+    subprocess.run(["bash", "setup.sh"])
+
 import streamlit as st
 import comic_generator_module
 import ai_script_module
