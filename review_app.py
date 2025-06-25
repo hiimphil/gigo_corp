@@ -1,7 +1,4 @@
 # review_app.py
-import os
-os.environ['MAGICK_CONFIGURE_PATH'] = '.'
-
 import streamlit as st
 import comic_generator_module
 import ai_script_module
