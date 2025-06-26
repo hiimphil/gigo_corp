@@ -5,7 +5,7 @@ from moviepy.editor import ImageClip, ImageSequenceClip, AudioFileClip, concaten
 import comic_generator_module as cgm
 
 # --- Configuration ---
-FPS = 12  # Frames per second for the animation. 12 is good for a simple cartoon style.
+FPS = 6  # Frames per second for the animation. 12 is good for a simple cartoon style.
 STANDARD_WIDTH = cgm.PANEL_WIDTH   # 512
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT # 640
 
