@@ -2,7 +2,7 @@
 
 streamlit
 openai
-Pillow==9.5.0
+Pillow
 requests
 tweepy
 atproto
