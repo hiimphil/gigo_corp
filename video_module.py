@@ -24,13 +24,18 @@ def find_animation_frames(character, talking_state, direction, action):
         ])
     return []
 
-def create_scene_clip(character, action, dialogue, audio_path, prev_char):
+def create_scene_clip(character, action, direction_override, dialogue, audio_path, prev_char):
     """
     Creates a single video clip for one line of dialogue, now with robust frame resizing
-    using the modern Pillow library to prevent errors and drifting.
+    and correct direction override logic.
     """
     talking_state = "talking" if dialogue else "nottalking"
-    direction = cgm.determine_logical_direction(character.lower(), prev_char)
+    
+    # --- DIRECTION LOGIC FIX ---
+    # The direction is now correctly determined by using the override first,
+    # then falling back to the conversational logic.
+    direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
+    
     frame_paths = find_animation_frames(character, talking_state, direction, action)
     if not frame_paths:
         return None, f"Could not find any images for {character} in state {talking_state}/{action}"
@@ -84,11 +89,15 @@ def create_video_from_script(script_text, audio_paths_dict):
     previous_character = None
 
     for i, line in enumerate(lines):
-        char, action, _, dialogue = cgm.parse_script_line(line)
+        # Now correctly capturing the direction_override from the parsed line
+        char, action, direction_override, dialogue = cgm.parse_script_line(line)
         if not char:
             continue
         audio_path = audio_paths_dict.get(i)
-        scene_clip, error = create_scene_clip(char, action, dialogue, audio_path, previous_character)
+        
+        # Pass the direction_override to the scene creation function
+        scene_clip, error = create_scene_clip(char, action, direction_override, dialogue, audio_path, previous_character)
+        
         if error:
             return None, error
         if scene_clip:
