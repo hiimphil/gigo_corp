@@ -1,4 +1,9 @@
 # review_app.py
+import os
+import time
+# Move os.environ setting to the top, before any other libraries that might need it.
+os.environ['MAGICK_CONFIGURE_PATH'] = '.'
+
 import streamlit as st
 import comic_generator_module
 import ai_script_module
@@ -9,11 +14,28 @@ import imgur_uploader
 import database_module
 import reddit_module
 import tts_module
-import video_module # <-- New import for Video Generation
-import os
-import time
+import video_module
 
-# --- Database Initialization (Handled in module) ---
+# --- Session State Initialization ---
+# This block is now at the top to ensure all keys exist before any UI is rendered.
+def init_session_state():
+    if 'current_script' not in st.session_state: st.session_state.current_script = ""
+    if 'script_title' not in st.session_state: st.session_state.script_title = "My First Comic"
+    if 'preview_image' not in st.session_state: st.session_state.preview_image = None
+    if 'generated_comic_paths' not in st.session_state: st.session_state.generated_comic_paths = []
+    if 'imgur_image_links' not in st.session_state: st.session_state.imgur_image_links = []
+    if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
+    if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
+    
+    # Initialize social media captions unconditionally to prevent AttributeErrors
+    default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
+    if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
+    if 'bluesky_caption' not in st.session_state: st.session_state.bluesky_caption = default_caption
+    if 'twitter_caption' not in st.session_state: st.session_state.twitter_caption = default_caption
+    if 'reddit_title' not in st.session_state: st.session_state.reddit_title = "Gigo Corp Comic"
+    if 'reddit_subreddit' not in st.session_state: st.session_state.reddit_subreddit = "GigoCorp"
+
+init_session_state()
 
 # --- Helper Function for Password Check ---
 def check_password():
@@ -37,22 +59,8 @@ def check_password():
 st.set_page_config(layout="wide")
 st.title("Gigo Corp Comic & Cartoon Builder")
 
-# --- Session State Initialization ---
-if 'current_script' not in st.session_state: st.session_state.current_script = ""
-if 'script_title' not in st.session_state: st.session_state.script_title = "My First Comic"
-if 'preview_image' not in st.session_state: st.session_state.preview_image = None
-if 'generated_comic_paths' not in st.session_state: st.session_state.generated_comic_paths = []
-if 'imgur_image_links' not in st.session_state: st.session_state.imgur_image_links = []
-if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
-if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None # <-- New state for video
-
-# --- Social Media State ---
-default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
-if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
-# ... (rest of social media state is unchanged)
 
 # --- Sidebar ---
-# ... (Sidebar is unchanged) ...
 st.sidebar.header("🔑 Admin Access")
 is_admin = check_password()
 st.sidebar.divider()
@@ -62,7 +70,7 @@ st.sidebar.code("A:(left) Hi!\nB:(shocked) Hello.")
 available_actions = comic_generator_module.get_available_actions()
 if available_actions:
     for char, states in available_actions.items():
-        with st.sidebar.expander(f"Character {char} Actions"):
+        with st.sidebar.expander(f"Character {char.upper()} Actions"):
             for state, directions in states.items():
                 st.write(f"**{state.capitalize()}:**")
                 for direction, actions in directions.items():
@@ -133,7 +141,7 @@ with col3:
 
 if st.session_state.preview_image:
     st.divider()
-    st.header("👀 Preview")
+    st.header("👀 Comic Preview")
     st.image(st.session_state.preview_image, use_container_width=True)
     with col4:
         if st.button("✅ Approve & Finalize Comic", use_container_width=True, type="primary"):
@@ -143,7 +151,7 @@ if st.session_state.preview_image:
                 else: st.session_state.generated_comic_paths = final_paths; st.success("Final comic files generated!"); st.rerun()
     st.divider()
 
-# --- NEW WORKFLOW: Cartoon Generation ---
+# --- Cartoon Generation Workflow ---
 st.header("🎬 Cartoon Generation")
 tabs = st.tabs(["Step 1: Generate Audio", "Step 2: Generate Video"])
 
@@ -152,8 +160,8 @@ with tabs[0]:
     if not st.session_state.current_script.strip():
         st.info("Write a script first.")
     else:
-        if st.button("Generate Audio", use_container_width=True):
-            st.session_state.final_cartoon_path = None # Reset old video
+        if st.button("Generate All Audio", use_container_width=True):
+            st.session_state.final_cartoon_path = None
             audio_paths = {}
             lines = st.session_state.current_script.strip().split('\n')
             with st.spinner("Generating audio for each line..."):
@@ -190,26 +198,18 @@ with tabs[1]:
         st.success("Cartoon generated successfully!")
         st.video(st.session_state.final_cartoon_path)
 
-if st.session_state.generated_comic_paths:
-    st.header("🚀 Final Files & Posting")
-    
-    # Select which image to use for single-image posts
-    composite_image_path = st.session_state.generated_comic_paths[-1]
-    
-    with st.expander("View Final Images (5 total)"):
-        st.image(composite_image_path, caption="Composite Image")
-        img_cols = st.columns(4)
-        for i in range(4):
-            with img_cols[i]:
-                st.image(st.session_state.generated_comic_paths[i], caption=f"Panel {i+1}")
-
+# --- Final Comic Files and Posting ---
+st.divider()
+st.header("🚀 Final Comic Files & Social Posting")
+if not st.session_state.generated_comic_paths:
+    st.info("Finalize a comic preview to enable social media posting options.")
+else:
     if not is_admin:
         st.info("Enter the correct password in the sidebar to enable uploading and posting.")
     else:
-        # --- IMGUR UPLOADING ---
-        st.subheader("1. Upload to Imgur (for Instagram)")
+        st.subheader("1. Upload Comic to Imgur")
         if st.session_state.imgur_image_links:
-            st.success("All images uploaded to Imgur!")
+                st.success("All images uploaded to Imgur!")
         else:
             if st.button("⬆️ Upload All 5 to Imgur", key="upload_all_imgur"):
                 with st.spinner(f"Uploading {len(st.session_state.generated_comic_paths)} images to Imgur..."):
@@ -221,9 +221,8 @@ if st.session_state.generated_comic_paths:
                     st.rerun()
                 else:
                     st.error(f"Imgur Upload Failed: {error_msg}")
-
-        # --- SOCIAL MEDIA POSTING ---
-        st.subheader("2. Post to Socials")
+        
+        st.subheader("2. Post Comic to Socials")
         st.markdown("##### Tailor Your Post Content:")
         cap_col1, cap_col2 = st.columns(2)
         with cap_col1:
