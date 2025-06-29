@@ -11,7 +11,7 @@ import comic_generator_module as cgm
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.1 # Set background audio to 10% of its original volume
+BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 10% of its original volume
 
 def find_animation_frames(character, talking_state, direction, action):
     """Finds a sequence of images for animation."""
