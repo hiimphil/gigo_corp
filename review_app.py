@@ -228,7 +228,7 @@ if st.session_state.generated_comic_paths:
             st.session_state.instagram_caption = st.text_area("🇮📷 Instagram Caption:", height=150, value=st.session_state.get('instagram_caption', ''))
             st.session_state.bluesky_caption = st.text_area("☁️ Bluesky Caption:", height=150, value=st.session_state.get('bluesky_caption', ''))
         with cap_col2:
-            st.session_state.twitter_caption = st.text_area("🐦 Twitter Caption:", height=150, value=s.session_state.get('twitter_caption', ''))
+            st.session_state.twitter_caption = st.text_area("🐦 Twitter Caption:", height=150, value=st.session_state.get('twitter_caption', ''))
             st.session_state.reddit_title = st.text_input("🤖 Reddit Title:", value=st.session_state.get('reddit_title', ''))
             st.session_state.reddit_subreddit = st.text_input("Subreddit (no r/):", value=st.session_state.get('reddit_subreddit', ''))
         
