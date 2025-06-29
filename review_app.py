@@ -4,7 +4,7 @@ import time
 os.environ['MAGICK_CONFIGURE_PATH'] = '.'
 
 import streamlit as st
-from streamlit_audiorec import st_audiorec
+from st_audiorec import st_audiorec
 import comic_generator_module
 import ai_script_module
 import social_media_module 
