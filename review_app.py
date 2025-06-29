@@ -199,6 +199,12 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("📽️ Assemble Final Cartoon")
+    
+    # --- New UI for Background Audio ---
+    st.session_state.background_audio = st.file_uploader(
+        "Upload a background audio track (optional)", type=['mp3', 'wav', 'm4a']
+    )
+    
     if not st.session_state.generated_audio_paths:
         st.info("Generate audio in Step 1 before creating the video.")
     else:
