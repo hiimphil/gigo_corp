@@ -7,18 +7,20 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont
 from textwrap import TextWrapper
 
-# --- Configuration ---
+# --- Configuration (HD Version) ---
 IMAGE_BASE_PATH = "Images/"
 FONT_PATH = "Fonts/"
 TITLEFONT_PATH = os.path.join(FONT_PATH, "RNS-B.ttf")
 MAIN_FONT_PATH = os.path.join(FONT_PATH, "Krungthep.ttf")
 
-FONT_SIZE = 32
+PANEL_WIDTH = 1080  # Upscaled from 512
+PANEL_HEIGHT = 1350 # Upscaled from 640
+FONT_SIZE = 64      # Upscaled from 32
 TEXT_COLOR = "#ffffff"
-TEXT_POSITION = (256, 250)
-SPACING_BETWEEN_LINES = 4
-PANEL_WIDTH = 512
-PANEL_HEIGHT = 640
+TEXT_POSITION_Y = 525 # Upscaled and adjusted Y-position for text
+SPACING_BETWEEN_LINES = 8
+TEXT_WRAP_WIDTH = 55  # Adjusted for the wider panel
+
 OUTPUT_FILENAME_PREFIX = "gigoco_"
 HEADER_TEXT = "GIGOCO"
 HEADER_HEIGHT = 40
@@ -63,7 +65,6 @@ def get_available_actions():
 def parse_script_line(line):
     """
     Parses a single line into character, action, dialogue, and direction override.
-    All components are now fully case-insensitive and converted to lowercase.
     """
     match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
     if not match:
@@ -95,8 +96,6 @@ def determine_logical_direction(current_char, prev_char):
 def find_image_path(character, talking_state, direction, action):
     """
     Finds the best available image path with a robust fallback system.
-    The folder structure is now entirely lowercase.
-    Example: Images/a/talking/right/normal/image.jpg
     """
     directions_to_try = [direction, "straight", "right", "left"]
     actions_to_try = [action, "normal"]
@@ -151,7 +150,7 @@ def process_script(script_text):
 
 
 def create_panel_image(image_path, dialogue, panel_num, temp_dir):
-    """Creates a single panel image, returns path or error."""
+    """Creates a single panel image, now at 1080x1350 resolution."""
     try:
         base_image = Image.open(image_path).convert("RGB")
         if base_image.size != (PANEL_WIDTH, PANEL_HEIGHT):
@@ -166,13 +165,13 @@ def create_panel_image(image_path, dialogue, panel_num, temp_dir):
         except IOError:
             font = ImageFont.load_default()
         
-        wrapper = TextWrapper(width=26)
+        wrapper = TextWrapper(width=TEXT_WRAP_WIDTH)
         lines = wrapper.wrap(text=dialogue)
         
         ascent, descent = font.getmetrics()
         line_height = ascent + descent
         total_text_block_height = (len(lines) * line_height) + (max(0, len(lines) - 1) * SPACING_BETWEEN_LINES)
-        y_text = TEXT_POSITION[1] - total_text_block_height
+        y_text = TEXT_POSITION_Y - total_text_block_height
 
         for line in lines:
             line_bbox = font.getbbox(line)
@@ -186,21 +185,27 @@ def create_panel_image(image_path, dialogue, panel_num, temp_dir):
 
 
 def assemble_composite_image(panel_filenames, output_path):
-    """Creates the final 4-up composite image."""
+    """Creates the final 4-up composite image for social media (1080x1350)."""
     try:
         images = [Image.open(fp) for fp in panel_filenames]
+        # The composite image remains 1080x1350 for social media compatibility
         composite_image = Image.new('RGB', (1080, 1350), 'white')
         draw = ImageDraw.Draw(composite_image)
+        
         try:
             header_font = ImageFont.truetype(TITLEFONT_PATH, HEADER_FONT_SIZE)
             draw.text((14, HEADER_HEIGHT / 2), HEADER_TEXT, font=header_font, fill=HEADER_TEXT_COLOR, anchor='lm')
         except Exception as e:
             print(f"Could not draw header on composite image: {e}")
         
-        composite_image.paste(images[0], (14, 40))
-        composite_image.paste(images[1], (546, 40))
-        composite_image.paste(images[2], (14, 697))
-        composite_image.paste(images[3], (546, 697))
+        # We now resize the full-size panels down to fit in the composite
+        small_panel_size = (512, 640)
+        resized_panels = [img.resize(small_panel_size, Image.Resampling.LANCZOS) for img in images]
+        
+        composite_image.paste(resized_panels[0], (14, 40))
+        composite_image.paste(resized_panels[1], (546, 40))
+        composite_image.paste(resized_panels[2], (14, 697))
+        composite_image.paste(resized_panels[3], (546, 697))
         composite_image.save(output_path, "jpeg", quality=95)
         return True, None
     except Exception as e:
@@ -261,17 +266,17 @@ def generate_comic_from_script_text(comic_script_text):
         
         output_dir = "Output_Comics"
         os.makedirs(output_dir, exist_ok=True)
-        
         output_paths = []
+        
+        # The panels are already full size (1080x1350), so we just copy them.
         for i, temp_panel_path in enumerate(temp_panel_paths):
-            full_size_path = os.path.join(output_dir, f"{base_filename}_panel_{i+1}.jpg")
-            panel_img = Image.open(temp_panel_path)
-            full_size_panel = panel_img.resize((1080, 1350), Image.Resampling.LANCZOS)
-            full_size_panel.save(full_size_path, "jpeg", quality=95)
-            output_paths.append(full_size_path)
+            final_panel_path = os.path.join(output_dir, f"{base_filename}_panel_{i+1}.jpg")
+            os.rename(temp_panel_path, final_panel_path)
+            output_paths.append(final_panel_path)
 
+        # Create the composite image
         composite_path = os.path.join(output_dir, f"{base_filename}_composite.jpg")
-        success, error = assemble_composite_image(temp_panel_paths, composite_path)
+        success, error = assemble_composite_image(output_paths, composite_path)
         if not success:
             return None, error
         output_paths.append(composite_path)
