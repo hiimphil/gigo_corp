@@ -17,7 +17,7 @@ PANEL_WIDTH = 1080  # Upscaled from 512
 PANEL_HEIGHT = 1350 # Upscaled from 640
 FONT_SIZE = 64      # Upscaled from 32
 TEXT_COLOR = "#ffffff"
-TEXT_POSITION = (512, 500)
+TEXT_POSITION_Y = 500
 SPACING_BETWEEN_LINES = 8
 TEXT_WRAP_WIDTH = 52  # Adjusted for the wider panel
 
