@@ -222,7 +222,7 @@ with tabs[1]:
                 video_path, error = video_module.create_video_from_script(
                     st.session_state.current_script, 
                     st.session_state.generated_audio_paths,
-                    background_audio_path # Pass the optional path
+                    bg_audio_path # Pass the optional path
                 )
                 if error: st.error(f"Video Failed: {error}")
                 else: st.session_state.final_cartoon_path = video_path
