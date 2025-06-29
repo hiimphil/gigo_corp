@@ -201,7 +201,6 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("📽️ Assemble Final Cartoon")
     
-    # --- New UI for Background Audio ---
     st.session_state.background_audio = st.file_uploader(
         "Upload a background audio track (optional)", type=['mp3', 'wav', 'm4a']
     )
@@ -210,19 +209,18 @@ with tabs[1]:
         st.info("Generate audio in Step 1 before creating the video.")
     else:
         if st.button("Generate Cartoon Video", use_container_width=True, type="primary"):
-            # Get the path of the uploaded file if it exists
             bg_audio_path = None
             if st.session_state.background_audio:
-                # Save uploaded file to a temporary location to get a persistent path
                 with open(os.path.join("temp_bg.mp3"), "wb") as f:
                     f.write(st.session_state.background_audio.getbuffer())
                 bg_audio_path = "temp_bg.mp3"
 
             with st.spinner("Assembling cartoon... This can take a minute!"):
+                # TYPO FIX: Pass the correct variable name 'bg_audio_path'
                 video_path, error = video_module.create_video_from_script(
                     st.session_state.current_script, 
                     st.session_state.generated_audio_paths,
-                    bg_audio_path # Pass the optional path
+                    bg_audio_path 
                 )
                 if error: st.error(f"Video Failed: {error}")
                 else: st.session_state.final_cartoon_path = video_path
