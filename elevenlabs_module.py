@@ -40,21 +40,24 @@ def generate_speech_for_line(character_id, text):
     if error:
         return None, error
 
-    voice_id = CHARACTER_VOICE_MAP.get(character_id.lower(), CHARACTER_VOICE_MAP['default'])
+    voice_id_str = CHARACTER_VOICE_MAP.get(character_id.lower(), CHARACTER_VOICE_MAP['default'])
 
-    if "placeholder" in voice_id:
+    if "placeholder" in voice_id_str:
         return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update it in elevenlabs_module.py."
 
     try:
-        # Generate the audio bytes
-        audio_bytes = client.generate(
+        # --- BUG FIX ---
+        # The correct method is client.text_to_speech.convert(), not client.generate().
+        # Also corrected the argument names from 'voice' and 'model' to 'voice_id' and 'model_id'.
+        audio_bytes = client.text_to_speech.convert(
+            voice_id=voice_id_str,
             text=text,
-            voice=voice_id,
-            model="eleven_multilingual_v2" # A good general-purpose model
+            model_id="eleven_multilingual_v2" # A good general-purpose model
         )
 
         # Create a temporary file to save the audio
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
+            # The 'save' function from ElevenLabs correctly handles writing the bytes.
             save(audio_bytes, temp_audio_file.name)
             temp_audio_path = temp_audio_file.name
         
