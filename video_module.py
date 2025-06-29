@@ -3,7 +3,8 @@ import os
 import random
 import numpy as np
 from PIL import Image
-from moviepy.editor import ImageSequenceClip, AudioFileClip, CompositeAudioClip, concatenate_videoclips
+from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
+                            CompositeAudioClip, concatenate_videoclips)
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 
@@ -11,7 +12,11 @@ import comic_generator_module as cgm
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 10% of its original volume
+BACKGROUND_AUDIO_VOLUME = 0.1 # Set background audio to 10%
+
+# --- Default Asset Paths ---
+DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
+OPENING_SEQUENCE_PATH = "Video/OpeningSequence.mp4"
 
 def find_animation_frames(character, talking_state, direction, action):
     """Finds a sequence of images for animation."""
@@ -73,7 +78,7 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
 
 def create_video_from_script(script_text, audio_paths_dict, background_audio_path=None):
     """
-    Generates a full cartoon video, now with an optional background audio track.
+    Generates a full cartoon video, now with an optional background audio track and opening sequence.
     """
     lines = script_text.strip().split('\n')
     scene_clips = []
@@ -94,26 +99,42 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
     if not scene_clips:
         return None, "No scenes were generated. Check your image paths and script."
 
-    final_video = concatenate_videoclips(scene_clips)
+    # Create the main cartoon body by combining the scenes
+    main_cartoon_body = concatenate_videoclips(scene_clips)
 
-    if background_audio_path and os.path.exists(background_audio_path):
+    # Determine which background audio to use (uploaded or default)
+    final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
+    
+    if final_bg_audio_path:
         try:
-            background_clip = AudioFileClip(background_audio_path)
-            background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME)
-            
-            # SIMPLIFICATION: Instead of looping, just trim the background audio
-            # to the duration of the final video.
-            background_clip = background_clip.set_duration(final_video.duration)
+            background_clip = AudioFileClip(final_bg_audio_path).fx(volumex, BACKGROUND_AUDIO_VOLUME)
+            background_clip = background_clip.set_duration(main_cartoon_body.duration)
 
-            if final_video.audio:
-                combined_audio = CompositeAudioClip([final_video.audio, background_clip])
-                final_video.audio = combined_audio
+            if main_cartoon_body.audio:
+                # Mix the dialogue with the background music
+                combined_audio = CompositeAudioClip([main_cartoon_body.audio, background_clip])
+                main_cartoon_body.audio = combined_audio
             else:
-                final_video.audio = background_clip
+                # If no dialogue, just use the background music
+                main_cartoon_body.audio = background_clip
             
         except Exception as e:
             return None, f"Failed to process background audio: {e}"
 
+    # --- Add Opening Sequence ---
+    final_clips_to_join = []
+    if os.path.exists(OPENING_SEQUENCE_PATH):
+        try:
+            # Load the opening sequence and ensure it's the correct size
+            opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH).resize(width=STANDARD_WIDTH, height=STANDARD_HEIGHT)
+            final_clips_to_join.append(opening_clip)
+        except Exception as e:
+            return None, f"Failed to load opening sequence video: {e}"
+
+    final_clips_to_join.append(main_cartoon_body)
+    
+    # Concatenate the final list of clips (opening sequence + main cartoon)
+    final_video = concatenate_videoclips(final_clips_to_join)
 
     output_dir = "Output_Cartoons"
     os.makedirs(output_dir, exist_ok=True)
