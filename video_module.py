@@ -12,7 +12,7 @@ import comic_generator_module as cgm
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.1 # Set background audio to 10%
+BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 10%
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
