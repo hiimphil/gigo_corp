@@ -3,13 +3,15 @@ import os
 import random
 import numpy as np
 from PIL import Image
-from moviepy.editor import ImageSequenceClip, AudioFileClip, concatenate_videoclips
+from moviepy.editor import ImageSequenceClip, AudioFileClip, CompositeAudioClip, concatenate_videoclips
+from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 
 # --- Configuration ---
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
+BACKGROUND_AUDIO_VOLUME = 0.1 # Set background audio to 10% of its original volume
 
 def find_animation_frames(character, talking_state, direction, action):
     """Finds a sequence of images for animation."""
@@ -26,37 +28,26 @@ def find_animation_frames(character, talking_state, direction, action):
 
 def create_scene_clip(character, action, direction_override, dialogue, audio_path, prev_char):
     """
-    Creates a single video clip for one line of dialogue, now with robust frame resizing
-    and correct direction override logic.
+    Creates a single video clip for one line of dialogue.
     """
     talking_state = "talking" if dialogue else "nottalking"
-    
-    # --- DIRECTION LOGIC FIX ---
-    # The direction is now correctly determined by using the override first,
-    # then falling back to the conversational logic.
     direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
-    
     frame_paths = find_animation_frames(character, talking_state, direction, action)
     if not frame_paths:
         return None, f"Could not find any images for {character} in state {talking_state}/{action}"
 
     if audio_path and os.path.exists(audio_path):
-        audio_clip = AudioFileClip(audio_path)
-        duration = audio_clip.duration
+        dialogue_clip = AudioFileClip(audio_path)
+        duration = dialogue_clip.duration
     else:
         duration = 1.5
-        audio_clip = None
+        dialogue_clip = None
 
-    # --- MODERN RESIZING FIX ---
-    # We now manually resize each frame using the latest Pillow library before passing it to MoviePy.
-    # This avoids MoviePy's internal, outdated call to Image.ANTIALIAS.
     unique_numpy_frames = []
     for path in frame_paths:
         try:
             with Image.open(path) as img:
-                # Use Image.Resampling.LANCZOS, the modern equivalent of ANTIALIAS
                 resized_img = img.resize((STANDARD_WIDTH, STANDARD_HEIGHT), Image.Resampling.LANCZOS)
-                # Convert the Pillow image to a NumPy array, which MoviePy can use
                 unique_numpy_frames.append(np.array(resized_img))
         except Exception as e:
             return None, f"Failed to open or resize image {path}: {e}"
@@ -75,29 +66,26 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
         return None, "Failed to generate numpy frame list for the scene."
 
     video_clip = ImageSequenceClip(final_frame_list, fps=FPS)
-    if audio_clip:
-        video_clip = video_clip.set_audio(audio_clip)
+    if dialogue_clip:
+        # We now return the dialogue clip separately to be composed later
+        video_clip = video_clip.set_audio(dialogue_clip)
 
     return video_clip, None
 
-def create_video_from_script(script_text, audio_paths_dict):
+def create_video_from_script(script_text, audio_paths_dict, background_audio_path=None):
     """
-    Generates a full cartoon video from a script and its corresponding audio files.
+    Generates a full cartoon video, now with an optional background audio track.
     """
     lines = script_text.strip().split('\n')
     scene_clips = []
     previous_character = None
 
     for i, line in enumerate(lines):
-        # Now correctly capturing the direction_override from the parsed line
         char, action, direction_override, dialogue = cgm.parse_script_line(line)
         if not char:
             continue
         audio_path = audio_paths_dict.get(i)
-        
-        # Pass the direction_override to the scene creation function
         scene_clip, error = create_scene_clip(char, action, direction_override, dialogue, audio_path, previous_character)
-        
         if error:
             return None, error
         if scene_clip:
@@ -108,6 +96,25 @@ def create_video_from_script(script_text, audio_paths_dict):
         return None, "No scenes were generated. Check your image paths and script."
 
     final_video = concatenate_videoclips(scene_clips)
+
+    # --- BACKGROUND AUDIO MIXING ---
+    if background_audio_path and os.path.exists(background_audio_path):
+        try:
+            # Load the background audio
+            background_clip = AudioFileClip(background_audio_path)
+            # Reduce its volume
+            background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME)
+            # Loop the background audio to match the video's duration
+            background_clip = background_clip.set_duration(final_video.duration).loop()
+            
+            # Combine the original dialogue audio with the new background audio
+            combined_audio = CompositeAudioClip([final_video.audio, background_clip])
+            final_video.audio = combined_audio
+            
+        except Exception as e:
+            return None, f"Failed to process background audio: {e}"
+
+
     output_dir = "Output_Cartoons"
     os.makedirs(output_dir, exist_ok=True)
     timestamp = random.randint(1000, 9999)
