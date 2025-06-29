@@ -62,6 +62,25 @@ st.title("Gigo Corp Comic & Cartoon Builder")
 # --- Sidebar ---
 st.sidebar.header("🔑 Admin Access")
 is_admin = check_password()
+
+# --- START OF DEBUGGING SNIPPET ---
+if is_admin:
+    with st.sidebar.expander("🕵️‍♀️ Secrets Inspector", expanded=False):
+        # Check for Firebase
+        if "firebase_credentials" in st.secrets:
+            st.success("✅ Found 'firebase_credentials' section.")
+        else:
+            st.error("❌ 'firebase_credentials' NOT FOUND.")
+        
+        # Check for ElevenLabs API Key
+        if "ELEVENLABS_API_KEY" in st.secrets and st.secrets["ELEVENLABS_API_KEY"]:
+            key = st.secrets["ELEVENLABS_API_KEY"]
+            st.success("✅ Found 'ELEVENLABS_API_KEY'.")
+            st.code(f"Key preview: '{key[:4]}...{key[-4:]}'", language="text")
+        else:
+            st.error("❌ 'ELEVENLABS_API_KEY' NOT FOUND or is empty.")
+# --- END OF DEBUGGING SNIPPET ---
+
 st.sidebar.divider()
 st.sidebar.header("🎨 Action Guide")
 st.sidebar.write("Use `(action)` or `(direction)` in a script line.")
