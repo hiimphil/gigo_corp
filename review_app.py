@@ -17,7 +17,7 @@ import tts_module
 import video_module
 
 # --- Session State Initialization ---
-# This block is now at the top to ensure all keys exist before any UI is rendered.
+# This block ensures all keys exist before any UI is rendered.
 def init_session_state():
     if 'current_script' not in st.session_state: st.session_state.current_script = ""
     if 'script_title' not in st.session_state: st.session_state.script_title = "My First Comic"
@@ -27,7 +27,6 @@ def init_session_state():
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     
-    # Initialize social media captions unconditionally to prevent AttributeErrors
     default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
     if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
     if 'bluesky_caption' not in st.session_state: st.session_state.bluesky_caption = default_caption
@@ -201,24 +200,23 @@ with tabs[1]:
 # --- Final Comic Files and Posting ---
 st.divider()
 st.header("🚀 Final Comic Files & Social Posting")
-if not st.session_state.generated_comic_paths:
-    st.info("Finalize a comic preview to enable social media posting options.")
-else:
+if st.session_state.generated_comic_paths:
     if not is_admin:
         st.info("Enter the correct password in the sidebar to enable uploading and posting.")
     else:
         st.subheader("1. Upload Comic to Imgur")
         if st.session_state.imgur_image_links:
-                st.success("All images uploaded to Imgur!")
+            st.success("All images uploaded to Imgur!")
+            with st.expander("View Imgur Links"):
+                for i, link in enumerate(st.session_state.imgur_image_links):
+                    st.markdown(f"- **Image {i+1}:** [{link}]({link})")
         else:
             if st.button("⬆️ Upload All 5 to Imgur", key="upload_all_imgur"):
                 with st.spinner(f"Uploading {len(st.session_state.generated_comic_paths)} images to Imgur..."):
-                    # We need the 4 individual panels + the composite for a 5-image carousel
                     paths_to_upload = st.session_state.generated_comic_paths
                     public_urls, error_msg = imgur_uploader.upload_multiple_images_to_imgur(paths_to_upload)
                 if public_urls:
-                    st.session_state.imgur_image_links = public_urls
-                    st.rerun()
+                    st.session_state.imgur_image_links = public_urls; st.rerun()
                 else:
                     st.error(f"Imgur Upload Failed: {error_msg}")
         
@@ -226,16 +224,18 @@ else:
         st.markdown("##### Tailor Your Post Content:")
         cap_col1, cap_col2 = st.columns(2)
         with cap_col1:
-            st.session_state.instagram_caption = st.text_area("🇮📷 Instagram Caption:", height=150, value=st.session_state.instagram_caption)
-            st.session_state.bluesky_caption = st.text_area("☁️ Bluesky Caption:", height=150, value=st.session_state.bluesky_caption)
+            # BUG FIX: Use .get() to safely access session state keys
+            st.session_state.instagram_caption = st.text_area("🇮📷 Instagram Caption:", height=150, value=st.session_state.get('instagram_caption', ''))
+            st.session_state.bluesky_caption = st.text_area("☁️ Bluesky Caption:", height=150, value=st.session_state.get('bluesky_caption', ''))
         with cap_col2:
-            st.session_state.twitter_caption = st.text_area("🐦 Twitter Caption:", height=150, value=st.session_state.twitter_caption)
-            st.session_state.reddit_title = st.text_input("🤖 Reddit Title:", value=st.session_state.reddit_title)
-            st.session_state.reddit_subreddit = st.text_input("Subreddit (no r/):", value=st.session_state.reddit_subreddit)
-
+            st.session_state.twitter_caption = st.text_area("🐦 Twitter Caption:", height=150, value=s.session_state.get('twitter_caption', ''))
+            st.session_state.reddit_title = st.text_input("🤖 Reddit Title:", value=st.session_state.get('reddit_title', ''))
+            st.session_state.reddit_subreddit = st.text_input("Subreddit (no r/):", value=st.session_state.get('reddit_subreddit', ''))
+        
         st.markdown("##### Click to Post:")
         post_cols = st.columns(4)
-        
+        composite_image_path = st.session_state.generated_comic_paths[-1]
+
         with post_cols[0]: # INSTAGRAM
             if st.button("🇮📷 Post to Instagram", use_container_width=True):
                 if not st.session_state.imgur_image_links:
@@ -248,21 +248,21 @@ else:
                         success, message = instagram_module.post_carousel_to_instagram_graph_api(ig_urls, st.session_state.instagram_caption)
                         if success: st.success(f"Posted to Instagram! {message}"); 
                         else: st.error(f"Instagram Failed: {message}")
-
+            pass
         with post_cols[1]: # BLUESKY
             if st.button("☁️ Post to Bluesky", use_container_width=True):
                 with st.spinner("Posting to Bluesky..."):
                     success, message = bluesky_module.post_comic_to_bluesky(composite_image_path, st.session_state.bluesky_caption)
                     if success: st.success(f"Posted to Bluesky! {message}")
                     else: st.error(f"Bluesky Failed: {message}")
-        
+            pass
         with post_cols[2]: # TWITTER
             if st.button("🐦 Post to Twitter", use_container_width=True):
                 with st.spinner("Posting to Twitter..."):
                     success, message = social_media_module.post_comic_to_twitter(composite_image_path, st.session_state.twitter_caption)
                     if success: st.success(f"Posted to Twitter! {message}")
                     else: st.error(f"Twitter Failed: {message}")
-        
+            pass
         with post_cols[3]: # REDDIT
             if st.button("🤖 Post to Reddit", use_container_width=True):
                 with st.spinner("Posting to Reddit..."):
@@ -270,3 +270,6 @@ else:
                     success, message = reddit_module.post_comic_to_reddit(composite_image_path, st.session_state.reddit_title, st.session_state.reddit_subreddit)
                     if success: st.success(f"Posted to Reddit! {message}")
                     else: st.error(f"Reddit Failed: {message}")
+            pass
+else:
+    st.info("Finalize a comic preview to enable social media posting options.")
