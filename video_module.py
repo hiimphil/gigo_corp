@@ -8,11 +8,12 @@ from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip,
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 
-# --- Configuration ---
+# --- Configuration (HD Version) ---
 FPS = 12
+# These values are now imported from the HD comic_generator_module
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 10%
+BACKGROUND_AUDIO_VOLUME = 0.1 # Set background audio to 10%
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
@@ -52,6 +53,7 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
     for path in frame_paths:
         try:
             with Image.open(path) as img:
+                # All images are resized to the new HD standard
                 resized_img = img.resize((STANDARD_WIDTH, STANDARD_HEIGHT), Image.Resampling.LANCZOS)
                 unique_numpy_frames.append(np.array(resized_img))
         except Exception as e:
@@ -99,10 +101,8 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
     if not scene_clips:
         return None, "No scenes were generated. Check your image paths and script."
 
-    # Create the main cartoon body by combining the scenes
     main_cartoon_body = concatenate_videoclips(scene_clips)
 
-    # Determine which background audio to use (uploaded or default)
     final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
     
     if final_bg_audio_path:
@@ -111,29 +111,28 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
             background_clip = background_clip.set_duration(main_cartoon_body.duration)
 
             if main_cartoon_body.audio:
-                # Mix the dialogue with the background music
                 combined_audio = CompositeAudioClip([main_cartoon_body.audio, background_clip])
                 main_cartoon_body.audio = combined_audio
             else:
-                # If no dialogue, just use the background music
                 main_cartoon_body.audio = background_clip
             
         except Exception as e:
             return None, f"Failed to process background audio: {e}"
 
-    # --- Add Opening Sequence ---
     final_clips_to_join = []
     if os.path.exists(OPENING_SEQUENCE_PATH):
         try:
-            # Load the opening sequence and ensure it's the correct size
-            opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH).resize(width=STANDARD_WIDTH, height=STANDARD_HEIGHT)
+            # Note: This relies on the OpeningSequence.mp4 file being the correct size (1080x1350).
+            opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
+            # A check to prevent errors if the opening clip is the wrong size.
+            if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
+                 return None, f"OpeningSequence.mp4 is not the correct size. Expected {STANDARD_WIDTH}x{STANDARD_HEIGHT}, but got {opening_clip.w}x{opening_clip.h}."
             final_clips_to_join.append(opening_clip)
         except Exception as e:
             return None, f"Failed to load opening sequence video: {e}"
 
     final_clips_to_join.append(main_cartoon_body)
     
-    # Concatenate the final list of clips (opening sequence + main cartoon)
     final_video = concatenate_videoclips(final_clips_to_join)
 
     output_dir = "Output_Cartoons"
