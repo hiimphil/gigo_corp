@@ -17,12 +17,12 @@ PANEL_WIDTH = 1080  # Upscaled from 512
 PANEL_HEIGHT = 1350 # Upscaled from 640
 FONT_SIZE = 64      # Upscaled from 32
 TEXT_COLOR = "#ffffff"
-TEXT_POSITION_Y = 525 # Upscaled and adjusted Y-position for text
+TEXT_POSITION = (512, 500)
 SPACING_BETWEEN_LINES = 8
-TEXT_WRAP_WIDTH = 55  # Adjusted for the wider panel
+TEXT_WRAP_WIDTH = 52  # Adjusted for the wider panel
 
 OUTPUT_FILENAME_PREFIX = "gigoco_"
-HEADER_TEXT = "GIGOCO"
+HEADER_TEXT = "GIGO_CORP"
 HEADER_HEIGHT = 40
 HEADER_FONT_SIZE = 40
 HEADER_TEXT_COLOR = "#6d7467"
