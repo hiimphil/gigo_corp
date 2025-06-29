@@ -8,7 +8,6 @@ import streamlit as st
 # --- Voice Configuration ---
 # TODO: Replace these placeholder IDs with your actual ElevenLabs Voice IDs.
 # You can find Voice IDs in your VoiceLab on the ElevenLabs website.
-# They look like this: '21m00Tcm4TlvDq8ikWAM'
 CHARACTER_VOICE_MAP = {
     'a': '0rOfEdoZRnNF0sbnFR5B', # Artie
     'b': 'PdXvwvHc8PDiZVI7iUTD', # B00L
@@ -30,8 +29,7 @@ def get_elevenlabs_client():
 
 def generate_speech_for_line(character_id, text):
     """
-    Generates an audio file from text using ElevenLabs TTS.
-    This function has the same signature as the old OpenAI TTS function for easy swapping.
+    Generates an audio file from text using ElevenLabs TTS (Text-to-Speech).
     """
     if not text or not text.strip():
         return None, None # Represents a pause for lines with no dialogue
@@ -43,28 +41,50 @@ def generate_speech_for_line(character_id, text):
     voice_id_str = CHARACTER_VOICE_MAP.get(character_id.lower(), CHARACTER_VOICE_MAP['default'])
 
     if "placeholder" in voice_id_str:
-        return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update it in elevenlabs_module.py."
+        return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update."
 
     try:
-        # --- BUG FIX ---
-        # The correct method is client.text_to_speech.convert(), not client.generate().
-        # Also corrected the argument names from 'voice' and 'model' to 'voice_id' and 'model_id'.
         audio_bytes = client.text_to_speech.convert(
             voice_id=voice_id_str,
             text=text,
             model_id="eleven_multilingual_v2" # A good general-purpose model
         )
-
         # Create a temporary file to save the audio
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
-            # The 'save' function from ElevenLabs correctly handles writing the bytes.
             save(audio_bytes, temp_audio_file.name)
-            temp_audio_path = temp_audio_file.name
-        
-        print(f"Generated ElevenLabs audio for '{text}' at: {temp_audio_path}")
-        return temp_audio_path, None
-
+            return temp_audio_file.name, None
     except Exception as e:
-        error_str = f"An unexpected error occurred during ElevenLabs TTS generation: {e}"
-        print(error_str)
-        return None, error_str
+        return None, f"An unexpected error occurred during ElevenLabs TTS generation: {e}"
+
+
+def change_voice_from_audio(character_id, audio_path):
+    """
+    Transforms the voice in an audio file to a different character's voice
+    using ElevenLabs Speech to Speech.
+    """
+    if not audio_path or not os.path.exists(audio_path):
+        return None, "Source audio file not found."
+
+    client, error = get_elevenlabs_client()
+    if error:
+        return None, error
+
+    voice_id_str = CHARACTER_VOICE_MAP.get(character_id.lower(), CHARACTER_VOICE_MAP['default'])
+    if "placeholder" in voice_id_str:
+        return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update it."
+
+    try:
+        # Convert the source audio file to the target voice
+        audio_bytes = client.speech_to_speech.convert(
+            voice_id=voice_id_str,
+            audio=audio_path,
+            model_id="eleven_multilingual_sts_v2" # Use the specific Speech-to-Speech model
+        )
+
+        # Save the transformed audio to a new temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
+            save(audio_bytes, temp_audio_file.name)
+            return temp_audio_file.name, None
+    except Exception as e:
+        return None, f"An unexpected error occurred during ElevenLabs STS generation: {e}"
+
