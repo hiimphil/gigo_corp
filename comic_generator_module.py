@@ -19,7 +19,7 @@ FONT_SIZE = 64      # Upscaled from 32
 TEXT_COLOR = "#ffffff"
 TEXT_POSITION_Y = 500
 SPACING_BETWEEN_LINES = 8
-TEXT_WRAP_WIDTH = 52  # Adjusted for the wider panel
+TEXT_WRAP_WIDTH = 26  # Adjusted for the wider panel
 
 OUTPUT_FILENAME_PREFIX = "gigoco_"
 HEADER_TEXT = "GIGO_CORP"
