@@ -14,3 +14,4 @@ moviepy==1.0.3
 mutagen>=1.45.1
 imageio-ffmpeg>=0.4.9
 elevenlabs>=1.0.0
+streamlit-audiorec>=0.1.0
