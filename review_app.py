@@ -13,11 +13,10 @@ import instagram_module
 import imgur_uploader
 import database_module
 import reddit_module
-import elevenlabs_module as tts_module # <-- This now points to your new ElevenLabs module
+import elevenlabs_module as tts_module # This now points to your new ElevenLabs module
 import video_module
 
 # --- Session State Initialization ---
-# This block ensures all keys exist before any UI is rendered.
 def init_session_state():
     if 'current_script' not in st.session_state: st.session_state.current_script = ""
     if 'script_title' not in st.session_state: st.session_state.script_title = "My First Comic"
@@ -62,25 +61,6 @@ st.title("Gigo Corp Comic & Cartoon Builder")
 # --- Sidebar ---
 st.sidebar.header("🔑 Admin Access")
 is_admin = check_password()
-
-# --- START OF DEBUGGING SNIPPET ---
-if is_admin:
-    with st.sidebar.expander("🕵️‍♀️ Secrets Inspector", expanded=False):
-        # Check for Firebase
-        if "firebase_credentials" in st.secrets:
-            st.success("✅ Found 'firebase_credentials' section.")
-        else:
-            st.error("❌ 'firebase_credentials' NOT FOUND.")
-        
-        # Check for ElevenLabs API Key
-        if "ELEVENLABS_API_KEY" in st.secrets and st.secrets["ELEVENLABS_API_KEY"]:
-            key = st.secrets["ELEVENLABS_API_KEY"]
-            st.success("✅ Found 'ELEVENLABS_API_KEY'.")
-            st.code(f"Key preview: '{key[:4]}...{key[-4:]}'", language="text")
-        else:
-            st.error("❌ 'ELEVENLABS_API_KEY' NOT FOUND or is empty.")
-# --- END OF DEBUGGING SNIPPET ---
-
 st.sidebar.divider()
 st.sidebar.header("🎨 Action Guide")
 st.sidebar.write("Use `(action)` or `(direction)` in a script line.")
@@ -186,7 +166,6 @@ with tabs[0]:
                 for i, line in enumerate(lines):
                     char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                     if char and dialogue:
-                        # This now calls the ElevenLabs module
                         path, error = tts_module.generate_speech_for_line(char, dialogue)
                         if error: st.error(f"Audio failed: {error}"); audio_paths = {}; break
                         audio_paths[i] = path
@@ -194,13 +173,29 @@ with tabs[0]:
                 st.session_state.generated_audio_paths = audio_paths
                 if audio_paths: st.success("Audio generated!")
 
-        if st.session_state.generated_audio_paths:
-            st.write("---")
-            lines = st.session_state.current_script.strip().split('\n')
-            for i, line in enumerate(lines):
+        st.write("---")
+        lines = st.session_state.current_script.strip().split('\n')
+        for i, line in enumerate(lines):
+            line_cols = st.columns([4, 1])
+            with line_cols[0]:
                 st.write(f"**Line {i+1}:** *{line.strip()}*")
                 if path := st.session_state.generated_audio_paths.get(i): st.audio(path)
-                else: st.info("_(No dialogue)_")
+                else: st.info("_(No dialogue or audio generated yet)_")
+            
+            with line_cols[1]:
+                if st.button("Regen", key=f"regen_audio_{i}", use_container_width=True):
+                    char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                    if char and dialogue:
+                        with st.spinner(f"Regenerating audio for line {i+1}..."):
+                            new_path, error = tts_module.generate_speech_for_line(char, dialogue)
+                            if error:
+                                st.error(f"Failed: {error}")
+                            else:
+                                st.session_state.generated_audio_paths[i] = new_path
+                                st.success("Audio updated!")
+                                st.rerun()
+                    else:
+                        st.warning("No dialogue to generate.")
 
 with tabs[1]:
     st.subheader("📽️ Assemble Final Cartoon")
