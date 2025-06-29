@@ -3,6 +3,15 @@ import os
 import random
 import numpy as np
 from PIL import Image
+
+# --- MONKEY-PATCH FOR PILLOW 10.0.0+ and moviepy ---
+# This addresses the "AttributeError: module 'PIL.Image' has no attribute 'ANTIALIAS'"
+# by adding the attribute back and pointing it to the new Resampling.LANCZOS.
+# This must be done BEFORE moviepy.editor is imported.
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+# --- END OF PATCH ---
+
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
                             CompositeAudioClip, concatenate_videoclips)
 from moviepy.audio.fx.all import volumex
@@ -13,7 +22,7 @@ FPS = 12
 # These values are now imported from the HD comic_generator_module
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.1 # Set background audio to 10%
+BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 10%
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
