@@ -15,7 +15,7 @@ import database_module
 import reddit_module
 import elevenlabs_module as tts_module
 import video_module
-from pydub import audio_segment
+from pydub import AudioSegment
 import io
 
 # --- Session State Initialization ---
