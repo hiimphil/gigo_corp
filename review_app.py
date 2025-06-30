@@ -1,10 +1,10 @@
 # review_app.py
 import os
 import time
-# Move os.environ setting to the top, before any other libraries that might need it.
 os.environ['MAGICK_CONFIGURE_PATH'] = '.'
 
 import streamlit as st
+from st_audiorec import st_audiorec
 import comic_generator_module
 import ai_script_module
 import social_media_module 
@@ -13,7 +13,7 @@ import instagram_module
 import imgur_uploader
 import database_module
 import reddit_module
-import elevenlabs_module as tts_module # This now points to your new ElevenLabs module
+import elevenlabs_module as tts_module # This module now handles both TTS and STS
 import video_module
 
 # --- Session State Initialization ---
@@ -25,6 +25,7 @@ def init_session_state():
     if 'imgur_image_links' not in st.session_state: st.session_state.imgur_image_links = []
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
+    if 'background_audio' not in st.session_state: st.session_state.background_audio = None
     
     default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
     if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
@@ -37,7 +38,6 @@ init_session_state()
 
 # --- Helper Function for Password Check ---
 def check_password():
-    """Returns `True` if the user has the correct password."""
     try:
         password = st.sidebar.text_input("Enter Password for Admin Access", type="password")
         if "APP_PASSWORD" in st.secrets and password == st.secrets.get("APP_PASSWORD"):
@@ -97,7 +97,6 @@ else:
     st.sidebar.write("No saved scripts in Firestore yet.")
 
 def reset_downstream_state():
-    """Resets all generated content when the script changes."""
     st.session_state.preview_image = None
     st.session_state.generated_comic_paths = []
     st.session_state.generated_audio_paths = {}
@@ -108,7 +107,7 @@ def reset_downstream_state():
 # --- Main Area ---
 st.header("📝 Script Editor")
 st.session_state.script_title = st.text_input("Script Title:", st.session_state.script_title)
-st.session_state.current_script = st.text_area("Comic Script", value=st.session_state.current_script, height=150, placeholder="A: I filed the report.\nB:(proud) You filed the report.\nA: It was a good report.\nB:(left) Indeed.", label_visibility="collapsed")
+st.session_state.current_script = st.text_area("Comic Script", value=st.session_state.current_script, height=150)
 
 # --- Action Buttons ---
 col1, col2, col3, col4 = st.columns(4)
@@ -158,7 +157,7 @@ with tabs[0]:
     if not st.session_state.current_script.strip():
         st.info("Write a script first.")
     else:
-        if st.button("Generate All Audio", use_container_width=True):
+        if st.button("Generate All Audio from Text", use_container_width=True):
             st.session_state.final_cartoon_path = None
             audio_paths = {}
             lines = st.session_state.current_script.strip().split('\n')
@@ -174,33 +173,58 @@ with tabs[0]:
                 if audio_paths: st.success("Audio generated!")
 
         st.write("---")
+        st.markdown("#### Individual Line Control")
         lines = st.session_state.current_script.strip().split('\n')
+        
         for i, line in enumerate(lines):
-            line_cols = st.columns([4, 1])
-            with line_cols[0]:
-                st.write(f"**Line {i+1}:** *{line.strip()}*")
-                if path := st.session_state.generated_audio_paths.get(i): st.audio(path)
-                else: st.info("_(No dialogue or audio generated yet)_")
-            
-            with line_cols[1]:
-                if st.button("Regen", key=f"regen_audio_{i}", use_container_width=True):
-                    char, _, _, dialogue = comic_generator_module.parse_script_line(line)
-                    if char and dialogue:
-                        with st.spinner(f"Regenerating audio for line {i+1}..."):
-                            new_path, error = tts_module.generate_speech_for_line(char, dialogue)
+            with st.container(border=True):
+                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                
+                line_cols = st.columns([3, 2])
+                with line_cols[0]:
+                    st.write(f"**Line {i+1}:** *{line.strip()}*")
+                    if path := st.session_state.generated_audio_paths.get(i): 
+                        st.audio(path)
+                    else: 
+                        st.info("_(No audio generated yet)_")
+                
+                with line_cols[1]:
+                    st.write("**Record your own voice:**")
+                    # BUG FIX: Add a unique key to each audio recorder instance
+                    wav_audio_data = st_audiorec(key=f"audiorec_{i}")
+
+                    if wav_audio_data is not None:
+                        temp_wav_path = f"temp_recording_{i}.wav"
+                        with open(temp_wav_path, "wb") as f:
+                            f.write(wav_audio_data)
+
+                        if st.button("Use Recording", key=f"use_rec_{i}"):
+                            with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
+                                # This now calls the new Speech to Speech function
+                                new_path, error = tts_module.change_voice_from_audio(char, temp_wav_path)
+                            
                             if error:
-                                st.error(f"Failed: {error}")
+                                st.error(f"Voice changing failed: {error}")
                             else:
                                 st.session_state.generated_audio_paths[i] = new_path
-                                st.success("Audio updated!")
+                                st.success("Audio updated from recording!")
                                 st.rerun()
+
+                if st.button("Regenerate from Text", key=f"regen_audio_{i}", use_container_width=True):
+                    if dialogue:
+                        with st.spinner(f"Regenerating audio for line {i+1}..."):
+                            new_path, error = tts_module.generate_speech_for_line(char, dialogue)
+                            if error: st.error(f"Failed: {error}")
+                            else:
+                                st.session_state.generated_audio_paths[i] = new_path
+                                st.success("Audio updated!"); st.rerun()
                     else:
                         st.warning("No dialogue to generate.")
 
 with tabs[1]:
+    # ... (Video generation tab is unchanged) ...
     st.subheader("📽️ Assemble Final Cartoon")
-
-    # --- New UI for Background Audio ---
+        # --- New UI for Background Audio ---
     st.session_state.background_audio = st.file_uploader(
         "Upload a background audio track (optional)", type=['mp3', 'wav', 'm4a']
     )
