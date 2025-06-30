@@ -25,7 +25,7 @@ def init_session_state():
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
-
+    
     default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
     if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
     if 'bluesky_caption' not in st.session_state: st.session_state.bluesky_caption = default_caption
@@ -96,6 +96,7 @@ else:
     st.sidebar.write("No saved scripts in Firestore yet.")
 
 def reset_downstream_state():
+    """Resets all generated content when the script changes."""
     st.session_state.preview_image = None
     st.session_state.generated_comic_paths = []
     st.session_state.generated_audio_paths = {}
@@ -195,17 +196,25 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("📽️ Assemble Final Cartoon")
-        # --- New UI for Background Audio ---
     st.session_state.background_audio = st.file_uploader(
         "Upload a background audio track (optional)", type=['mp3', 'wav', 'm4a']
     )
-
     if not st.session_state.generated_audio_paths:
         st.info("Generate audio in Step 1 before creating the video.")
     else:
         if st.button("Generate Cartoon Video", use_container_width=True, type="primary"):
+            bg_audio_path = None
+            if st.session_state.background_audio:
+                with open(os.path.join("temp_bg.mp3"), "wb") as f:
+                    f.write(st.session_state.background_audio.getbuffer())
+                bg_audio_path = "temp_bg.mp3"
+
             with st.spinner("Assembling cartoon... This can take a minute!"):
-                video_path, error = video_module.create_video_from_script(st.session_state.current_script, st.session_state.generated_audio_paths)
+                video_path, error = video_module.create_video_from_script(
+                    st.session_state.current_script, 
+                    st.session_state.generated_audio_paths,
+                    bg_audio_path
+                )
                 if error: st.error(f"Video Failed: {error}")
                 else: st.session_state.final_cartoon_path = video_path
 
@@ -251,9 +260,36 @@ if st.session_state.generated_comic_paths:
         post_cols = st.columns(4)
         composite_image_path = st.session_state.generated_comic_paths[-1]
 
-        with post_cols[0]: pass
-        with post_cols[1]: pass
-        with post_cols[2]: pass
-        with post_cols[3]: pass
+        with post_cols[0]: # INSTAGRAM
+            if st.button("🇮📷 Post to Instagram", use_container_width=True):
+                if not st.session_state.imgur_image_links:
+                    st.warning("Please upload to Imgur first.")
+                else:
+                    ig_urls = st.session_state.imgur_image_links[:4] + [st.session_state.imgur_image_links[-1]]
+                    with st.spinner("Posting to Instagram... this can take a moment."):
+                        success, message = instagram_module.post_carousel_to_instagram_graph_api(ig_urls, st.session_state.instagram_caption)
+                        if success: st.success(f"Posted to Instagram! {message}"); 
+                        else: st.error(f"Instagram Failed: {message}")
+
+        with post_cols[1]: # BLUESKY
+            if st.button("☁️ Post to Bluesky", use_container_width=True):
+                with st.spinner("Posting to Bluesky..."):
+                    success, message = bluesky_module.post_comic_to_bluesky(composite_image_path, st.session_state.bluesky_caption)
+                    if success: st.success(f"Posted to Bluesky! {message}")
+                    else: st.error(f"Bluesky Failed: {message}")
+        
+        with post_cols[2]: # TWITTER
+            if st.button("🐦 Post to Twitter", use_container_width=True):
+                with st.spinner("Posting to Twitter..."):
+                    success, message = social_media_module.post_comic_to_twitter(composite_image_path, st.session_state.twitter_caption)
+                    if success: st.success(f"Posted to Twitter! {message}")
+                    else: st.error(f"Twitter Failed: {message}")
+        
+        with post_cols[3]: # REDDIT
+            if st.button("🤖 Post to Reddit", use_container_width=True):
+                with st.spinner("Posting to Reddit..."):
+                    success, message = reddit_module.post_comic_to_reddit(composite_image_path, st.session_state.reddit_title, st.session_state.reddit_subreddit)
+                    if success: st.success(f"Posted to Reddit! {message}")
+                    else: st.error(f"Reddit Failed: {message}")
 else:
     st.info("Finalize a comic preview to enable social media posting options.")
