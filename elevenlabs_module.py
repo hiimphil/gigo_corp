@@ -6,8 +6,6 @@ import tempfile
 import streamlit as st
 
 # --- Voice Configuration ---
-# TODO: Replace these placeholder IDs with your actual ElevenLabs Voice IDs.
-# You can find Voice IDs in your VoiceLab on the ElevenLabs website.
 CHARACTER_VOICE_MAP = {
     'a': '0rOfEdoZRnNF0sbnFR5B', # Artie
     'b': 'PdXvwvHc8PDiZVI7iUTD', # B00L
@@ -32,7 +30,7 @@ def generate_speech_for_line(character_id, text):
     Generates an audio file from text using ElevenLabs TTS (Text-to-Speech).
     """
     if not text or not text.strip():
-        return None, None # Represents a pause for lines with no dialogue
+        return None, None 
 
     client, error = get_elevenlabs_client()
     if error:
@@ -41,15 +39,14 @@ def generate_speech_for_line(character_id, text):
     voice_id_str = CHARACTER_VOICE_MAP.get(character_id.lower(), CHARACTER_VOICE_MAP['default'])
 
     if "placeholder" in voice_id_str:
-        return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update."
+        return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update it."
 
     try:
         audio_bytes = client.text_to_speech.convert(
             voice_id=voice_id_str,
             text=text,
-            model_id="eleven_multilingual_v2" # A good general-purpose model
+            model_id="eleven_multilingual_v2"
         )
-        # Create a temporary file to save the audio
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
             save(audio_bytes, temp_audio_file.name)
             return temp_audio_file.name, None
@@ -74,12 +71,13 @@ def change_voice_from_audio(character_id, audio_path):
         return None, f"Character '{character_id}' is using a placeholder Voice ID. Please update it."
 
     try:
-        # Convert the source audio file to the target voice
-        audio_bytes = client.speech_to_speech.convert(
-            voice_id=voice_id_str,
-            audio=audio_path,
-            model_id="eleven_multilingual_sts_v2" # Use the specific Speech-to-Speech model
-        )
+        with open(audio_path, 'rb') as audio_file:
+            # Convert the source audio file to the target voice
+            audio_bytes = client.speech_to_speech.convert(
+                voice_id=voice_id_str,
+                audio=audio_file, # Pass the file object directly
+                model_id="eleven_multilingual_sts_v2" 
+            )
 
         # Save the transformed audio to a new temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
