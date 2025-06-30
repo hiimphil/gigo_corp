@@ -15,7 +15,8 @@ import database_module
 import reddit_module
 import elevenlabs_module as tts_module
 import video_module
-import wave # Using the standard, built-in wave library
+from pydub import AudioSegment
+import io
 
 # --- Session State Initialization ---
 def init_session_state():
@@ -223,16 +224,20 @@ with tabs[0]:
                 if wav_audio_data:
                     temp_wav_path = f"temp_recording_{line_index}.wav"
                     
-                    # --- FINAL BUG FIX: Use the standard 'wave' library with correct parameters ---
+                    # --- FINAL AUDIO FIX: Use pydub to load, resample, and save the audio correctly ---
                     try:
-                        with wave.open(temp_wav_path, 'wb') as wf:
-                            wf.setnchannels(1)  # Mono audio
-                            wf.setsampwidth(2) # 2 bytes = 16-bit samples
-                            wf.setframerate(44100) # Standard sample rate
-                            wf.writeframes(wav_audio_data)
+                        # Load the raw audio data from the recorder into an AudioSegment
+                        audio_segment = AudioSegment.from_file(io.BytesIO(wav_audio_data), format="wav")
+                        
+                        # Resample the audio to 16kHz, which is optimal for the STS API
+                        resampled_segment = audio_segment.set_frame_rate(16000)
+                        
+                        # Export the correctly sampled audio to a temporary file
+                        resampled_segment.export(temp_wav_path, format="wav")
+
                     except Exception as e:
-                        st.error(f"Error saving WAV file: {e}")
-                    # --- END OF FINAL BUG FIX ---
+                        st.error(f"Error processing recorded audio: {e}")
+                    # --- END OF FINAL AUDIO FIX ---
 
                     if st.button("Use This Recording", key=f"use_rec_{line_index}"):
                         with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
