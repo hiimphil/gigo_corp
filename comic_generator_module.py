@@ -4,6 +4,7 @@ import re
 import random
 import datetime
 import tempfile
+import shutil # Import shutil at the top for robust file operations
 from PIL import Image, ImageDraw, ImageFont
 from textwrap import TextWrapper
 
@@ -22,7 +23,7 @@ SPACING_BETWEEN_LINES = 8
 TEXT_WRAP_WIDTH = 26  # Adjusted for the wider panel
 
 OUTPUT_FILENAME_PREFIX = "gigoco_"
-HEADER_TEXT = "GIGO CORP"
+HEADER_TEXT = "GIGOCO"
 HEADER_HEIGHT = 40
 HEADER_FONT_SIZE = 40
 HEADER_TEXT_COLOR = "#6d7467"
@@ -271,7 +272,8 @@ def generate_comic_from_script_text(comic_script_text):
         # The panels are already full size (1080x1350), so we just copy them.
         for i, temp_panel_path in enumerate(temp_panel_paths):
             final_panel_path = os.path.join(output_dir, f"{base_filename}_panel_{i+1}.jpg")
-            os.rename(temp_panel_path, final_panel_path)
+            # --- BUG FIX: Use shutil.move for cross-device compatibility ---
+            shutil.move(temp_panel_path, final_panel_path)
             output_paths.append(final_panel_path)
 
         # Create the composite image
