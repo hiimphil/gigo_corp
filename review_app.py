@@ -15,6 +15,7 @@ import database_module
 import reddit_module
 import elevenlabs_module as tts_module # This module now handles both TTS and STS
 import video_module
+import wave # New import for saving WAV files correctly
 
 # --- Session State Initialization ---
 def init_session_state():
@@ -221,8 +222,14 @@ with tabs[0]:
 
                 if wav_audio_data:
                     temp_wav_path = f"temp_recording_{line_index}.wav"
-                    with open(temp_wav_path, "wb") as f:
-                        f.write(wav_audio_data)
+                    
+                    # --- BUG FIX: Save the WAV file with proper headers ---
+                    with wave.open(temp_wav_path, 'wb') as wf:
+                        wf.setnchannels(1)  # Mono
+                        wf.setsampwidth(2) # 16-bit
+                        wf.setframerate(44100) # Standard sample rate
+                        wf.writeframes(wav_audio_data)
+                    # --- END OF BUG FIX ---
 
                     if st.button("Use This Recording", key=f"use_rec_{line_index}"):
                         with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
