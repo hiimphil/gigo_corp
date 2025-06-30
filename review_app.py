@@ -4,7 +4,6 @@ import time
 os.environ['MAGICK_CONFIGURE_PATH'] = '.'
 
 import streamlit as st
-from st_audiorec import st_audiorec
 import comic_generator_module
 import ai_script_module
 import social_media_module 
@@ -15,8 +14,6 @@ import database_module
 import reddit_module
 import elevenlabs_module as tts_module
 import video_module
-from pydub import AudioSegment
-import io
 
 # --- Session State Initialization ---
 def init_session_state():
@@ -28,7 +25,6 @@ def init_session_state():
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
-    if 'recording_for_line' not in st.session_state: st.session_state.recording_for_line = None
 
     default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
     if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
@@ -161,7 +157,6 @@ with tabs[0]:
         st.info("Write a script first.")
     else:
         if st.button("Generate All Audio from Text", use_container_width=True):
-            st.session_state.recording_for_line = None
             st.session_state.final_cartoon_path = None
             audio_paths = {}
             lines = st.session_state.current_script.strip().split('\n')
@@ -188,71 +183,15 @@ with tabs[0]:
                 else: 
                     st.info("_(No audio generated yet)_")
                 
-                # --- New UI for Recording ---
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Regenerate from Text", key=f"regen_text_{i}", use_container_width=True):
-                        char, _, _, dialogue = comic_generator_module.parse_script_line(line)
-                        if dialogue:
-                            with st.spinner(f"Regenerating audio for line {i+1}..."):
-                                new_path, error = tts_module.generate_speech_for_line(char, dialogue)
-                                if error: st.error(f"Failed: {error}")
-                                else:
-                                    st.session_state.generated_audio_paths[i] = new_path
-                                    st.success("Audio updated!"); st.rerun()
-                        else:
-                            st.warning("No dialogue to generate.")
-                with col2:
-                    if st.button("Record Performance", key=f"record_perf_{i}", use_container_width=True, type="secondary"):
-                        # Set which line we are recording for and rerun to show the UI
-                        st.session_state.recording_for_line = i
-                        st.rerun()
-        
-        # --- Recorder UI (shown outside the loop) ---
-        if st.session_state.recording_for_line is not None:
-            line_index = st.session_state.recording_for_line
-            line_text = lines[line_index]
-            char, _, _, _ = comic_generator_module.parse_script_line(line_text)
-
-            with st.container(border=True):
-                st.subheader(f"🎙️ Recording for Line {line_index + 1}: {char.upper()}")
-                st.write(f"*{line_text.strip()}*")
-                
-                # The audio recorder is now only called ONCE, solving the duplicate ID error
-                wav_audio_data = st_audiorec()
-
-                if wav_audio_data:
-                    # This is now the temporary file we will pass to ElevenLabs
-                    temp_mp3_path = f"temp_recording_{line_index}.mp3"
-                    
-                    # --- FINAL AUDIO FIX: Use pydub to convert raw WAV to MP3 ---
-                    try:
-                        # Load the raw audio data from the recorder
-                        audio_segment = AudioSegment.from_file(io.BytesIO(wav_audio_data), format="wav")
-                        
-                        # Export it as a clean MP3 file, which forces ffmpeg to be used
-                        audio_segment.export(temp_mp3_path, format="mp3")
-
-                    except Exception as e:
-                        st.error(f"Error processing recorded audio: {e}")
-                    # --- END OF FINAL AUDIO FIX ---
-
-                    if st.button("Use This Recording", key=f"use_rec_{line_index}"):
-                        with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
-                            # Pass the path to the clean MP3 file
-                            new_path, error = tts_module.change_voice_from_audio(char, temp_mp3_path)
-                        
-                        if error:
-                            st.error(f"Voice changing failed: {error}")
-                        else:
-                            st.session_state.generated_audio_paths[line_index] = new_path
-                            st.session_state.recording_for_line = None
-                            st.success("Audio updated from recording!")
-                            st.rerun()
-
-                if st.button("Cancel Recording", key=f"cancel_rec_{line_index}"):
-                    st.session_state.recording_for_line = None
-                    st.rerun()
+                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                if dialogue:
+                    if st.button("Regenerate Audio", key=f"regen_text_{i}", use_container_width=True):
+                        with st.spinner(f"Regenerating audio for line {i+1}..."):
+                            new_path, error = tts_module.generate_speech_for_line(char, dialogue)
+                            if error: st.error(f"Failed: {error}")
+                            else:
+                                st.session_state.generated_audio_paths[i] = new_path
+                                st.success("Audio updated!"); st.rerun()
 
 with tabs[1]:
     st.subheader("📽️ Assemble Final Cartoon")
