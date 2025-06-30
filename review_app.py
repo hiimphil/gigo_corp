@@ -222,18 +222,16 @@ with tabs[0]:
                 wav_audio_data = st_audiorec()
 
                 if wav_audio_data:
-                    temp_wav_path = f"temp_recording_{line_index}.wav"
+                    # This is now the temporary file we will pass to ElevenLabs
+                    temp_mp3_path = f"temp_recording_{line_index}.mp3"
                     
-                    # --- FINAL AUDIO FIX: Use pydub to load, resample, and save the audio correctly ---
+                    # --- FINAL AUDIO FIX: Use pydub to convert raw WAV to MP3 ---
                     try:
-                        # Load the raw audio data from the recorder into an AudioSegment
+                        # Load the raw audio data from the recorder
                         audio_segment = AudioSegment.from_file(io.BytesIO(wav_audio_data), format="wav")
                         
-                        # Resample the audio to 16kHz, which is optimal for the STS API
-                        resampled_segment = audio_segment.set_frame_rate(16000)
-                        
-                        # Export the correctly sampled audio to a temporary file
-                        resampled_segment.export(temp_wav_path, format="wav")
+                        # Export it as a clean MP3 file, which forces ffmpeg to be used
+                        audio_segment.export(temp_mp3_path, format="mp3")
 
                     except Exception as e:
                         st.error(f"Error processing recorded audio: {e}")
@@ -241,20 +239,20 @@ with tabs[0]:
 
                     if st.button("Use This Recording", key=f"use_rec_{line_index}"):
                         with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
-                            new_path, error = tts_module.change_voice_from_audio(char, temp_wav_path)
+                            # Pass the path to the clean MP3 file
+                            new_path, error = tts_module.change_voice_from_audio(char, temp_mp3_path)
                         
                         if error:
                             st.error(f"Voice changing failed: {error}")
                         else:
                             st.session_state.generated_audio_paths[line_index] = new_path
-                            st.session_state.recording_for_line = None # Close UI
+                            st.session_state.recording_for_line = None
                             st.success("Audio updated from recording!")
                             st.rerun()
 
                 if st.button("Cancel Recording", key=f"cancel_rec_{line_index}"):
                     st.session_state.recording_for_line = None
                     st.rerun()
-
 
 with tabs[1]:
     st.subheader("📽️ Assemble Final Cartoon")
