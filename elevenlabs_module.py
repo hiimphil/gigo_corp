@@ -45,7 +45,7 @@ def generate_speech_for_line(character_id, text):
         audio_bytes = client.text_to_speech.convert(
             voice_id=voice_id_str,
             text=text,
-            model_id="eleven_multilingual_v2"
+            model_id="eleven_v3"
         )
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
             save(audio_bytes, temp_audio_file.name)
