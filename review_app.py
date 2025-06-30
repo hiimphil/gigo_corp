@@ -26,7 +26,8 @@ def init_session_state():
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
-    
+    if 'recording_for_line' not in st.session_state: st.session_state.recording_for_line = None # New state for recording UI
+
     default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
     if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
     if 'bluesky_caption' not in st.session_state: st.session_state.bluesky_caption = default_caption
@@ -158,6 +159,7 @@ with tabs[0]:
         st.info("Write a script first.")
     else:
         if st.button("Generate All Audio from Text", use_container_width=True):
+            st.session_state.recording_for_line = None # Close recorder UI if open
             st.session_state.final_cartoon_path = None
             audio_paths = {}
             lines = st.session_state.current_script.strip().split('\n')
@@ -178,51 +180,68 @@ with tabs[0]:
         
         for i, line in enumerate(lines):
             with st.container(border=True):
-                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                st.write(f"**Line {i+1}:** *{line.strip()}*")
+                if path := st.session_state.generated_audio_paths.get(i): 
+                    st.audio(path)
+                else: 
+                    st.info("_(No audio generated yet)_")
                 
-                line_cols = st.columns([3, 2])
-                with line_cols[0]:
-                    st.write(f"**Line {i+1}:** *{line.strip()}*")
-                    if path := st.session_state.generated_audio_paths.get(i): 
-                        st.audio(path)
-                    else: 
-                        st.info("_(No audio generated yet)_")
+                # --- New UI for Recording ---
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Regenerate from Text", key=f"regen_text_{i}", use_container_width=True):
+                        char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                        if dialogue:
+                            with st.spinner(f"Regenerating audio for line {i+1}..."):
+                                new_path, error = tts_module.generate_speech_for_line(char, dialogue)
+                                if error: st.error(f"Failed: {error}")
+                                else:
+                                    st.session_state.generated_audio_paths[i] = new_path
+                                    st.success("Audio updated!"); st.rerun()
+                        else:
+                            st.warning("No dialogue to generate.")
+                with col2:
+                    if st.button("Record Performance", key=f"record_perf_{i}", use_container_width=True, type="secondary"):
+                        # Set which line we are recording for and rerun to show the UI
+                        st.session_state.recording_for_line = i
+                        st.rerun()
+        
+        # --- Recorder UI (shown outside the loop) ---
+        if st.session_state.recording_for_line is not None:
+            line_index = st.session_state.recording_for_line
+            line_text = lines[line_index]
+            char, _, _, _ = comic_generator_module.parse_script_line(line_text)
+
+            with st.container(border=True):
+                st.subheader(f"🎙️ Recording for Line {line_index + 1}: {char.upper()}")
+                st.write(f"*{line_text.strip()}*")
                 
-                with line_cols[1]:
-                    st.write("**Record your own voice:**")
-                    # BUG FIX: Add a unique key to each audio recorder instance
-                    wav_audio_data = st_audiorec(key=f"audiorec_{i}")
+                # The audio recorder is now only called ONCE, solving the duplicate ID error
+                wav_audio_data = st_audiorec()
 
-                    if wav_audio_data is not None:
-                        temp_wav_path = f"temp_recording_{i}.wav"
-                        with open(temp_wav_path, "wb") as f:
-                            f.write(wav_audio_data)
+                if wav_audio_data:
+                    temp_wav_path = f"temp_recording_{line_index}.wav"
+                    with open(temp_wav_path, "wb") as f:
+                        f.write(wav_audio_data)
 
-                        if st.button("Use Recording", key=f"use_rec_{i}"):
-                            with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
-                                # This now calls the new Speech to Speech function
-                                new_path, error = tts_module.change_voice_from_audio(char, temp_wav_path)
-                            
-                            if error:
-                                st.error(f"Voice changing failed: {error}")
-                            else:
-                                st.session_state.generated_audio_paths[i] = new_path
-                                st.success("Audio updated from recording!")
-                                st.rerun()
+                    if st.button("Use This Recording", key=f"use_rec_{line_index}"):
+                        with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
+                            new_path, error = tts_module.change_voice_from_audio(char, temp_wav_path)
+                        
+                        if error:
+                            st.error(f"Voice changing failed: {error}")
+                        else:
+                            st.session_state.generated_audio_paths[line_index] = new_path
+                            st.session_state.recording_for_line = None # Close UI
+                            st.success("Audio updated from recording!")
+                            st.rerun()
 
-                if st.button("Regenerate from Text", key=f"regen_audio_{i}", use_container_width=True):
-                    if dialogue:
-                        with st.spinner(f"Regenerating audio for line {i+1}..."):
-                            new_path, error = tts_module.generate_speech_for_line(char, dialogue)
-                            if error: st.error(f"Failed: {error}")
-                            else:
-                                st.session_state.generated_audio_paths[i] = new_path
-                                st.success("Audio updated!"); st.rerun()
-                    else:
-                        st.warning("No dialogue to generate.")
+                if st.button("Cancel Recording", key=f"cancel_rec_{line_index}"):
+                    st.session_state.recording_for_line = None
+                    st.rerun()
+
 
 with tabs[1]:
-    # ... (Video generation tab is unchanged) ...
     st.subheader("📽️ Assemble Final Cartoon")
         # --- New UI for Background Audio ---
     st.session_state.background_audio = st.file_uploader(
