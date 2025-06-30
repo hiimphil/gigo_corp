@@ -10,7 +10,7 @@ CHARACTER_VOICE_MAP = {
     'a': '0rOfEdoZRnNF0sbnFR5B', # Artie
     'b': 'PdXvwvHc8PDiZVI7iUTD', # B00L
     'c': 'Px4v5nXnQ6QfAZufyV2u', # Cling
-    'd': 'YBrpT1nAa8RMDOHHRgF7', # Dusty
+    'd': '7hAUbSMdewpdCy8Y0nDx', # Dusty
     'default': '4YYIPFl9wE5c4L2eu2Gb'  # Burt Reynolds
 }
 
