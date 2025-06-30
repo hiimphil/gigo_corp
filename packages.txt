@@ -1,3 +1,2 @@
 ffmpeg
 imagemagick
-portaudio19-dev
