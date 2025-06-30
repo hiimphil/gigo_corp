@@ -224,7 +224,6 @@ def _generate_images(script_text):
     for i, panel in enumerate(panel_data):
         path, error = create_panel_image(panel['image_path'], panel['dialogue'], i, temp_dir)
         if error:
-            import shutil
             shutil.rmtree(temp_dir)
             return None, None, error
         temp_panel_paths.append(path)
@@ -249,7 +248,6 @@ def generate_preview_image(comic_script_text):
             return img.copy(), None
     finally:
         if temp_dir and os.path.exists(temp_dir):
-            import shutil
             shutil.rmtree(temp_dir)
 
 
@@ -288,5 +286,4 @@ def generate_comic_from_script_text(comic_script_text):
         return None, f"Error during final image generation: {e}"
     finally:
         if temp_dir and os.path.exists(temp_dir):
-            import shutil
             shutil.rmtree(temp_dir)
