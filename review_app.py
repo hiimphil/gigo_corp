@@ -15,7 +15,8 @@ import database_module
 import reddit_module
 import elevenlabs_module as tts_module # This module now handles both TTS and STS
 import video_module
-import wave # New import for saving WAV files correctly
+from pydub import AudioSegment # New import for robust audio handling
+import io # New import to handle in-memory audio data
 
 # --- Session State Initialization ---
 def init_session_state():
@@ -223,12 +224,12 @@ with tabs[0]:
                 if wav_audio_data:
                     temp_wav_path = f"temp_recording_{line_index}.wav"
                     
-                    # --- BUG FIX: Save the WAV file with proper headers ---
-                    with wave.open(temp_wav_path, 'wb') as wf:
-                        wf.setnchannels(1)  # Mono
-                        wf.setsampwidth(2) # 16-bit
-                        wf.setframerate(44100) # Standard sample rate
-                        wf.writeframes(wav_audio_data)
+                    # --- BUG FIX: Use pydub to properly format and save the WAV file ---
+                    try:
+                        audio_segment = AudioSegment.from_file(io.BytesIO(wav_audio_data), format="wav")
+                        audio_segment.export(temp_wav_path, format="wav")
+                    except Exception as e:
+                        st.error(f"Failed to process recorded audio: {e}")
                     # --- END OF BUG FIX ---
 
                     if st.button("Use This Recording", key=f"use_rec_{line_index}"):
