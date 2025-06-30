@@ -13,10 +13,9 @@ import instagram_module
 import imgur_uploader
 import database_module
 import reddit_module
-import elevenlabs_module as tts_module # This module now handles both TTS and STS
+import elevenlabs_module as tts_module
 import video_module
-from pydub import AudioSegment # New import for robust audio handling
-import io # New import to handle in-memory audio data
+import wave # Using the standard, built-in wave library
 
 # --- Session State Initialization ---
 def init_session_state():
@@ -28,7 +27,7 @@ def init_session_state():
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
-    if 'recording_for_line' not in st.session_state: st.session_state.recording_for_line = None # New state for recording UI
+    if 'recording_for_line' not in st.session_state: st.session_state.recording_for_line = None
 
     default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
     if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
@@ -161,7 +160,7 @@ with tabs[0]:
         st.info("Write a script first.")
     else:
         if st.button("Generate All Audio from Text", use_container_width=True):
-            st.session_state.recording_for_line = None # Close recorder UI if open
+            st.session_state.recording_for_line = None
             st.session_state.final_cartoon_path = None
             audio_paths = {}
             lines = st.session_state.current_script.strip().split('\n')
@@ -224,13 +223,16 @@ with tabs[0]:
                 if wav_audio_data:
                     temp_wav_path = f"temp_recording_{line_index}.wav"
                     
-                    # --- BUG FIX: Use pydub to properly format and save the WAV file ---
+                    # --- FINAL BUG FIX: Use the standard 'wave' library with correct parameters ---
                     try:
-                        audio_segment = AudioSegment.from_file(io.BytesIO(wav_audio_data), format="wav")
-                        audio_segment.export(temp_wav_path, format="wav")
+                        with wave.open(temp_wav_path, 'wb') as wf:
+                            wf.setnchannels(1)  # Mono audio
+                            wf.setsampwidth(2) # 2 bytes = 16-bit samples
+                            wf.setframerate(44100) # Standard sample rate
+                            wf.writeframes(wav_audio_data)
                     except Exception as e:
-                        st.error(f"Failed to process recorded audio: {e}")
-                    # --- END OF BUG FIX ---
+                        st.error(f"Error saving WAV file: {e}")
+                    # --- END OF FINAL BUG FIX ---
 
                     if st.button("Use This Recording", key=f"use_rec_{line_index}"):
                         with st.spinner(f"Converting your voice to {char.upper()}'s voice..."):
