@@ -44,25 +44,3 @@ def display_sidebar():
         st.sidebar.info("No action folders found in your 'Images' directory.")
     
     st.sidebar.divider()
-    
-    # --- Temporary Migration Tool ---
-    st.sidebar.header("⚙️ Admin Tools")
-    if is_admin:
-        if st.sidebar.button("Migrate Old Scripts (Run Once)"):
-            # A more robust way to handle this without a spinner context
-            st.sidebar.info("Migration in progress...")
-            
-            # Perform the migration
-            message, count = database_module.migrate_scripts_collection()
-            
-            # Display the results
-            if count > 0:
-                st.sidebar.success(message)
-                st.sidebar.info("You can now remove the migration button code from 'ui_sidebar.py'.")
-                st.rerun()
-            else:
-                st.sidebar.warning(message)
-    else:
-        st.sidebar.info("Log in to see admin tools.")
-
-    return is_admin
