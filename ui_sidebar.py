@@ -1,6 +1,7 @@
 # ui_sidebar.py
 import streamlit as st
 import comic_generator_module
+import database_module # Import database_module to call the migration function
 
 def check_password():
     """Returns `True` if the user has the correct password."""
@@ -44,6 +45,19 @@ def display_sidebar():
     
     st.sidebar.divider()
     
-    # The Script Library has been correctly removed from the sidebar.
+    # --- Temporary Migration Tool ---
+    st.sidebar.header("⚙️ Admin Tools")
+    if is_admin:
+        if st.sidebar.button("Migrate Old Scripts (Run Once)"):
+            with st.sidebar.spinner("Migrating scripts..."):
+                message, count = database_module.migrate_scripts_collection()
+                if count > 0:
+                    st.sidebar.success(message)
+                    st.rerun() # Rerun to refresh the script list in the comic maker
+                else:
+                    st.sidebar.warning(message)
+                st.sidebar.info("You can now remove the migration button code from 'ui_sidebar.py'.")
+    else:
+        st.sidebar.info("Log in to see admin tools.")
 
     return is_admin
