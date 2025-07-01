@@ -1,8 +1,6 @@
 # ui_sidebar.py
 import streamlit as st
-import time
 import comic_generator_module
-import database_module
 
 def check_password():
     """Returns `True` if the user has the correct password."""
@@ -23,7 +21,7 @@ def check_password():
         return True
 
 def display_sidebar():
-    """Renders the entire sidebar and returns the admin status."""
+    """Renders the sidebar for Admin Access and the Action Guide."""
     st.sidebar.header("🔑 Admin Access")
     is_admin = check_password()
     st.sidebar.divider()
@@ -45,33 +43,7 @@ def display_sidebar():
         st.sidebar.info("No action folders found in your 'Images' directory.")
     
     st.sidebar.divider()
-
-    st.sidebar.header("📜 Script Library")
-    saved_scripts = database_module.load_scripts() 
-    if saved_scripts:
-        script_to_load = st.sidebar.selectbox(
-            "Select a script:", 
-            options=list(saved_scripts.keys()), 
-            index=None, 
-            placeholder="-- Choose a script to load --"
-        )
-        load_col, delete_col = st.sidebar.columns(2)
-        with load_col:
-            if st.button("Load Script", use_container_width=True):
-                if script_to_load:
-                    st.session_state.current_script = saved_scripts[script_to_load]
-                    st.session_state.script_title = script_to_load
-                    st.rerun()
-        with delete_col:
-            if st.button("Delete", use_container_width=True):
-                if script_to_load and is_admin:
-                    success, message = database_module.delete_script(script_to_load)
-                    st.toast(message, icon="🗑️" if success else "❌")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.sidebar.warning("Select a script and be an admin.")
-    else:
-        st.sidebar.write("No saved scripts in Firestore yet.")
+    
+    # The Script Library has been correctly removed from the sidebar.
 
     return is_admin
