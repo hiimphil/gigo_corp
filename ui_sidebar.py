@@ -43,6 +43,11 @@ def display_sidebar():
         st.sidebar.info("No action folders found in your 'Images' directory.")
     
     st.sidebar.divider()
+    st.sidebar.divider()
+    st.sidebar.divider()
+    st.sidebar.divider()
+    st.sidebar.divider()
+    st.sidebar.divider()
 
     # --- NEW: Performance Note Guide ---
     st.sidebar.header("🎤 Performance Note Guide")
