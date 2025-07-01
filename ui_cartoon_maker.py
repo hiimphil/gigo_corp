@@ -2,8 +2,8 @@
 import streamlit as st
 import time
 import os
-import re # Import the regular expression module
-import comic_generator_module 
+import re 
+import comic_generator_module # We can reuse some parsing logic
 import ai_script_module
 import database_module
 import elevenlabs_module as tts_module
@@ -112,20 +112,18 @@ def display_audio_tab(script):
     if st.button("Generate All Audio", use_container_width=True, key="gen_all_cartoon_audio"):
         st.session_state.final_cartoon_path = None
         audio_paths = {}
-        lines = script.strip().split('\n')
+        lines = script.strip().split('\n') # Use the passed 'script' variable
         with st.spinner("Generating audio for each line..."):
             for i, line in enumerate(lines):
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                 if char and dialogue:
-                    # --- FIX: Clean the dialogue of performance notes and visual cues ---
-                    # This regular expression removes anything inside [] or ()
-                    spoken_dialogue = re.sub(r'\[.*?\]|\(.*?\)', '', dialogue).strip()
+                    # --- NEW LOGIC: Only strip out parenthetical visual cues ---
+                    # This regular expression removes only the content in parentheses ()
+                    spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
                     
                     path, error = tts_module.generate_speech_for_line(char, spoken_dialogue)
                     if error:
-                        st.error(f"Audio failed: {error}")
-                        audio_paths = {}
-                        break
+                        st.error(f"Audio failed: {error}"); audio_paths = {}; break
                     audio_paths[i] = path
                 else:
                     audio_paths[i] = None
@@ -136,7 +134,7 @@ def display_audio_tab(script):
     
     if st.session_state.get('generated_audio_paths'):
         st.write("---")
-        lines = script.strip().split('\n')
+        lines = script.strip().split('\n') # Use the passed 'script' variable
         for i, line in enumerate(lines):
             with st.container(border=True):
                 st.write(f"**Line {i+1}:** *{line.strip()}*")
@@ -149,8 +147,8 @@ def display_audio_tab(script):
                 if dialogue:
                     if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
                         with st.spinner(f"Regenerating audio for line {i+1}..."):
-                            # --- FIX: Use the same cleaning logic for regeneration ---
-                            spoken_dialogue = re.sub(r'\[.*?\]|\(.*?\)', '', dialogue).strip()
+                            # --- NEW LOGIC: Also apply for regeneration ---
+                            spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
                             new_path, error = tts_module.generate_speech_for_line(char, spoken_dialogue)
                             if error:
                                 st.error(f"Failed: {error}")
@@ -181,7 +179,7 @@ def display_video_tab(script):
 
         with st.spinner("Assembling cartoon... This can take a minute!"):
             video_path, error = video_module.create_video_from_script(
-                script, 
+                script, # Use the passed 'script' variable
                 st.session_state.generated_audio_paths,
                 bg_audio_path
             )
