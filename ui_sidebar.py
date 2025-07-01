@@ -1,7 +1,6 @@
 # ui_sidebar.py
 import streamlit as st
 import comic_generator_module
-import database_module # Import database_module to call the migration function
 
 def check_password():
     """Returns `True` if the user has the correct password."""
@@ -27,8 +26,8 @@ def display_sidebar():
     is_admin = check_password()
     st.sidebar.divider()
 
-    st.sidebar.header("🎨 Action Guide")
-    st.sidebar.write("Use `(action)` or `(direction)` in a script line.")
+    st.sidebar.header("🎨 Visual Action Guide")
+    st.sidebar.write("Use `(action)` to change character art.")
     st.sidebar.code("A:(left) Hi!\nB:(shocked) Hello.")
     
     available_actions = comic_generator_module.get_available_actions()
@@ -44,3 +43,25 @@ def display_sidebar():
         st.sidebar.info("No action folders found in your 'Images' directory.")
     
     st.sidebar.divider()
+
+    # --- NEW: Performance Note Guide ---
+    st.sidebar.header("🎤 Performance Note Guide")
+    st.sidebar.write("Use `[note]` to add performance or sound effects. The text in brackets will NOT be spoken.")
+    with st.sidebar.expander("View Available Notes"):
+        st.markdown("""
+        **Vocal Delivery:**
+        * `[laughs]`
+        * `[whispers]`
+        * `[sighs]`
+        * `[sarcastic]`
+        * `[curious]`
+        * `[excited]`
+        * `[crying]`
+        
+        **Sound Effects:**
+        * `[gunshot]`
+        * `[applause]`
+        * `[swallows]`
+        """)
+
+    return is_admin
