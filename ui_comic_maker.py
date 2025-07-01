@@ -10,6 +10,18 @@ import bluesky_module
 import social_media_module
 import reddit_module
 
+def _init_social_keys():
+    """
+    A safeguard function to ensure all social media keys exist in the session state.
+    This prevents AttributeErrors if the main app's initialization is missed on a rerun.
+    """
+    default_caption = "This comic is property of Gigo Co. #webcomic #gigo"
+    if 'instagram_caption' not in st.session_state: st.session_state.instagram_caption = default_caption
+    if 'bluesky_caption' not in st.session_state: st.session_state.bluesky_caption = default_caption
+    if 'twitter_caption' not in st.session_state: st.session_state.twitter_caption = default_caption
+    if 'reddit_title' not in st.session_state: st.session_state.reddit_title = "Gigo Corp Comic"
+    if 'reddit_subreddit' not in st.session_state: st.session_state.reddit_subreddit = "GigoCorp"
+
 def reset_comic_state():
     """Resets the state specific to the comic maker."""
     st.session_state.preview_image = None
@@ -122,6 +134,9 @@ def display_social_poster(is_admin):
     if not is_admin:
         st.info("Enter the correct password in the sidebar to enable uploading and posting.")
         return
+    
+    # Call the safeguard function to ensure keys exist
+    _init_social_keys()
         
     # --- Imgur Uploading ---
     st.subheader("1. Upload Comic to Imgur")
