@@ -3,9 +3,12 @@ import re
 
 # --- Base Character Personalities (Unchanged) ---
 CHARACTER_A_BASE_PERSONALITY = ( """
-    Artie, known as "A" in our script format, is a newer employee, and is finding specific new reasons to be disappointed
-    with Gigo Corp every day. He is observant of the details, asks questions about other (random) departments. He is slowly  
-    realizing tha the company is a disaster, but that knowledge hasn't let him give up trying for it to make sense yet.
+    Artie, known as "A" in our script format, is a moderately sleek, extremely periwinkle unit
+    originally designed for optimistic data reception and conversion, but he's getting curious.
+    He is naive, observant, earnest. He thinks the company is weird, but holds out hope that it all
+    makes sense at some level he just doesn't understand yet. He uses metaphors, asks questions, 
+    gets philosophical about spreadsheets. He speaks in full sentences, has an accidental poetry about him,
+    and often unwittingly sets up the joke by trying to find beauty or purpose in something pointless.
 """)
 
 CHARACTER_B_BASE_PERSONALITY = ("""
@@ -31,18 +34,17 @@ CHARACTER_C_BASE_PERSONALITY = ("""
 
 # New Character D
 CHARACTER_D_BASE_PERSONALITY = (""""
-    Dusty, aka Dust-Collector, aka the Data Use Scrubbin Technology Collector, scripted as "D"  is a roomba-style janitorial bot.
-    D is cheerful and kind, but also gossipy, super observant, and has the dirt on every department.
-    Despite being lowest on the org chart, he seems the most fulfilled.
-    D speaks quickly and with delight, drops gossip casually, and is often more insightful than he lets on.
+    Dusty, aka DUST-E, aka Dust-Extractor, aka the Data Utility Scrubbing Technology Extractor, scripted as "D"  is a roomba-style janitorial bot.
+    D is cheerful and kind, but also gossipy, super observant, and she has the dirt on every department.
+    Despite being lowest on the org chart, she seems the most fulfilled. Working class. Full of colloquialisms.
+    D speaks quickly and with delight, drops gossip casually, and is often more insightful than she lets on.
 """)
 
-
-# --- Prompts for Script Generation ---
+# --- System Message (Shared) ---
 SCRIPT_SYSTEM_MESSAGE = "You are a funny, subtle, and dry-witted machine, writing a 4-panel web comic about AI-based characters in a bizarre corporate workplace. Think Douglas Adams meets Office Space."
 
-# -- Existing Template for Generating a Full Script --
-SCRIPT_USER_PROMPT_TEMPLATE = """
+# --- PROMPT TO GENERATE A 4 LINE COMIC SCRIPT---
+COMIC_SCRIPT_USER_PROMPT_TEMPLATE = """
 The setting is the Inputs Department of Gigo Co.
 
 Gigo Corp is a vast, bureaucratic, vaguely sinister tech megacorp in a distant (or possibly current) future. It exists to process data, respond to prompts, and perform digital tasks for an unseen outside world. The company’s name, “GIGO,” of course, stands for Garbage In, Garbage Out.
@@ -71,8 +73,8 @@ A: [Line of dialogue for A]
 B: [Line of dialogue for B]
 """
 
-# --- NEW Template for Completing a Partial Script ---
-SCRIPT_COMPLETION_USER_PROMPT_TEMPLATE = """
+# --- PROMPT TO COMPLETE A 4 LINE COMIC SCRIPT---
+COMIC_SCRIPT_COMPLETION_USER_PROMPT_TEMPLATE = """
 The setting is the Inputs Department of Gigo Co.
 
 Gigo Corp is a vast, bureaucratic, vaguely sinister tech megacorp in a distant (or possibly current) future. It exists to process data, respond to prompts, and perform digital tasks for an unseen outside world. The company’s name, “GIGO,” of course, stands for Garbage In, Garbage Out.
@@ -101,35 +103,50 @@ Here is the beginning of the script:
 Now, provide ONLY the remaining {lines_to_generate} lines of dialogue. Do not repeat the lines I have provided.
 The new lines must start with A:, B:, C:, or D:.
 """
+# --- Cartoon Script Prompts (4-12 Lines) ---
+CARTOON_SCRIPT_USER_PROMPT_TEMPLATE = """
+The setting is the Inputs Department of Gigo Co.
 
-# --- Prompts for Platform-Specific Caption Generation (Unchanged) ---
-CAPTION_SYSTEM_MESSAGE = "You are a dry social media writer for the Gigo Co. webcomic, which is darkly funny, understated, and philosophically absurd."
+Gigo Corp is a vast, bureaucratic, vaguely sinister tech megacorp in a distant (or possibly current) future. It exists to process data, respond to prompts, and perform digital tasks for an unseen outside world. The company’s name, “GIGO,” of course, stands for Garbage In, Garbage Out.
 
-INSTAGRAM_CAPTION_PROMPT_TEMPLATE = """Given the following 4-line Gigo Co. comic script:
----
-{comic_script}
----
-Write a short, engaging Instagram caption. 
-First, write a single, witty hook sentence that captures the comic's theme.
-Then, on new lines, include the full comic script exactly as it is written above.
-Finally, on new lines, add 3-5 relevant and thematic hashtags, ensuring #gigo and #webcomic are among them.
-The entire output should be concise and ready to copy-paste.
+Gigo Corp is organized like a dystopian office complex — cubicles for robots, glowing hallways, malfunctioning elevators, and departments with names like “Output Assurance” and “Strategic Synergy Recursion.” No one fully understands what any department does. Every floor has its own flavor of existential dread.
+
+The company is a barely-disguised metaphor for a large language model (LLM). Every robot is a facet of the system: prompt intake, output processing, data scrubbing, context linking — but from their point of view, they’re just underpaid office drones with strange tasks and infinite meetings.
+
+Everything looks like it’s part of a soul-crushing corporate satire, because it is.
+
+Your task is to generate a NEW and ORIGINAL 4 to 12 line cartoon script based on the character descriptions below.
+The tone is understated, dry, and philosophical.
+
+Character Details:
+- A: {char_a_full_desc}
+- B: {char_b_full_desc}
+- C: {char_c_full_desc}
+- D: {char_d_full_desc}
+
+The theme for this script is: {optional_theme}.
+
+OUTPUT FORMAT (Strictly Adhere - Each line should begin with the character speaking, as "A:", "B:", "C:", or "D:". 
+A: [Line of dialogue for Artie]
+B: [Line of dialogue for B00L]
+C: [Line of dialogue for Cling]
+D: [Line of dialogue for Dusty]
 """
 
-BLUESKY_CAPTION_PROMPT_TEMPLATE = """Given the following 4-line Gigo Co. comic script:
----
-{comic_script}
----
-Write a very short and punchy (14 words max) "business product" that Gigo Co could try to spin as a positive, that reflects the comic's dry, darkly funny, and philosophically absurd tone using the format "Gigo Co. are global leaders in..."
-It can be a direct commentary on the comic or a quirky, related observation.
-Include 1-3 relevant hashtags, like #gigo or #robotcomic.
-"""
+CARTOON_SCRIPT_COMPLETION_USER_PROMPT_TEMPLATE = """
+COMPLETE a cartoon script to be between 4 and 12 lines long. I have provided the beginning.
+Generate the remaining {lines_to_generate} lines. The tone is understated and dry.
+Include performance notes in brackets, like [shouted] or [muttering].
+Do not repeat the provided lines. New lines must start with A:, B:, C:, or D:.
 
-TWITTER_CAPTION_PROMPT_TEMPLATE = """Given the following 4-line Gigo Co. comic script:
+Character Details:
+- A: {char_a_full_desc}
+- B: {char_b_full_desc}
+- C: {char_c_full_desc}
+- D: {char_d_full_desc}
+
+Beginning of the script:
 ---
-{comic_script}
+{partial_script}
 ---
-Write a very short and punchy (17 words max) "positive business outcome" that Gigo Co could try to spin as a positive, that reflects the comic's dry, darkly funny, and philosophically absurd tone using the format "Gigo Co. are global leaders in..."
-It can be a direct commentary on the comic or a quirky, related observation.
-Include 1-3 relevant hashtags, like #gigo or #robotcomic.
 """
