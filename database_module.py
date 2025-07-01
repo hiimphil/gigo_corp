@@ -17,8 +17,6 @@ def init_db():
         st.error(f"Firebase initialization failed: {e}")
         return None
 
-# Use st.cache_data to cache the script list.
-# The cache is now managed per collection name.
 @st.cache_data(ttl=3600)
 def load_scripts(collection_name):
     """Loads all scripts from a specified Firestore collection."""
@@ -51,7 +49,6 @@ def save_script(title, script_text, collection_name):
             'script_text': script_text,
             'created_at': firestore.SERVER_TIMESTAMP
         })
-        # Clear the cache for the specific collection that was modified
         load_scripts.clear(collection_name=collection_name)
         return True, f"Script '{title}' saved successfully."
     except Exception as e:
@@ -65,8 +62,43 @@ def delete_script(title, collection_name):
         
     try:
         db.collection(collection_name).document(title).delete()
-        # Clear the cache for the specific collection that was modified
         load_scripts.clear(collection_name=collection_name)
         return True, f"Script '{title}' deleted successfully."
     except Exception as e:
         return False, f"Error deleting script: {e}"
+
+def migrate_scripts_collection():
+    """
+    Reads all documents from the old 'scripts' collection and copies them
+    to the new 'comic_scripts' collection.
+    """
+    db = init_db()
+    if not db:
+        return "Database connection failed.", 0
+
+    source_collection = "scripts"
+    dest_collection = "comic_scripts"
+    
+    source_ref = db.collection(source_collection)
+    dest_ref = db.collection(dest_collection)
+
+    try:
+        docs = source_ref.stream()
+        doc_list = list(docs)
+        if not doc_list:
+            return f"No documents found in '{source_collection}'. Nothing to migrate.", 0
+        
+        count = 0
+        for doc in doc_list:
+            doc_id = doc.id
+            doc_data = doc.to_dict()
+            # Set the data in the new collection. This will create or overwrite.
+            dest_ref.document(doc_id).set(doc_data)
+            count += 1
+        
+        # Clear the cache for the comic scripts so the list refreshes
+        load_scripts.clear(collection_name=dest_collection)
+        
+        return f"Migration complete! Moved {count} documents to '{dest_collection}'.", count
+    except Exception as e:
+        return f"An error occurred during migration: {e}", 0
