@@ -37,10 +37,11 @@ def init_session_state():
 # --- Main App Logic ---
 def main():
     """Main function to run the Streamlit app."""
+    st.set_page_config(layout="wide")
+    
     # Initialize session state at the very beginning
     init_session_state()
 
-    st.set_page_config(layout="wide")
     st.title("Gigo Corp Content Builder")
 
     # The sidebar is now simpler and only returns the admin status
