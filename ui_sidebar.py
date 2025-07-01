@@ -49,14 +49,19 @@ def display_sidebar():
     st.sidebar.header("⚙️ Admin Tools")
     if is_admin:
         if st.sidebar.button("Migrate Old Scripts (Run Once)"):
+            message = ""
+            count = 0
             with st.sidebar.spinner("Migrating scripts..."):
+                # Perform the migration first, without drawing any UI inside the spinner
                 message, count = database_module.migrate_scripts_collection()
-                if count > 0:
-                    st.sidebar.success(message)
-                    st.rerun() # Rerun to refresh the script list in the comic maker
-                else:
-                    st.sidebar.warning(message)
+            
+            # Now that the spinner is closed, display the results
+            if count > 0:
+                st.sidebar.success(message)
                 st.sidebar.info("You can now remove the migration button code from 'ui_sidebar.py'.")
+                st.rerun() # Rerun to refresh the script list in the comic maker
+            else:
+                st.sidebar.warning(message)
     else:
         st.sidebar.info("Log in to see admin tools.")
 
