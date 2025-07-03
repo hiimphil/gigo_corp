@@ -14,6 +14,7 @@ def _init_cartoon_keys():
     if 'cartoon_script' not in st.session_state: st.session_state.cartoon_script = ""
     if 'cartoon_title' not in st.session_state: st.session_state.cartoon_title = "My First Cartoon"
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
+    if 'audio_generation_status' not in st.session_state: st.session_state.audio_generation_status = {} # New state for status
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
 
@@ -61,7 +62,7 @@ def display(is_admin):
         "Cartoon Script (4-12 lines)", 
         value=st.session_state.get('cartoon_script', ''), 
         height=250,
-        help="Write a script between 4 and 12 lines. Use brackets for performance notes, e.g., A: [shouting] I need coffee!"
+        help="Use (visual notes) and [performance notes]. e.g., A: [shouting] I need coffee!"
     )
 
     # --- Action Buttons for Cartoon Script ---
@@ -112,7 +113,8 @@ def display_audio_tab(script):
     if st.button("Generate All Audio", use_container_width=True, key="gen_all_cartoon_audio"):
         st.session_state.final_cartoon_path = None
         audio_paths = {}
-        lines = script.strip().split('\n') # Use the passed 'script' variable
+        audio_statuses = {}
+        lines = script.strip().split('\n')
         with st.spinner("Generating audio for each line..."):
             for i, line in enumerate(lines):
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
@@ -121,41 +123,55 @@ def display_audio_tab(script):
                     # This regular expression removes only the content in parentheses ()
                     spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
                     
-                    path, error = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                    path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
                     if error:
                         st.error(f"Audio failed: {error}"); audio_paths = {}; break
                     audio_paths[i] = path
+                    audio_statuses[i] = status
+
                 else:
                     audio_paths[i] = None
             st.session_state.generated_audio_paths = audio_paths
+            st.session_state.audio_generation_status = audio_statuses
+
             if audio_paths:
-                st.success("Audio generated!")
-                st.rerun()
+                st.success("Audio generated!"); st.rerun()
     
     if st.session_state.get('generated_audio_paths'):
         st.write("---")
         lines = script.strip().split('\n') # Use the passed 'script' variable
         for i, line in enumerate(lines):
             with st.container(border=True):
-                st.write(f"**Line {i+1}:** *{line.strip()}*")
-                if path := st.session_state.generated_audio_paths.get(i):
-                    st.audio(path)
-                else:
-                    st.info("_(No audio generated yet)_")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"**Line {i+1}:** *{line.strip()}*")
+                    if path := st.session_state.generated_audio_paths.get(i):
+                        st.audio(path)
+                    else:
+                        st.info("_(No audio generated yet)_")
                 
+                with col2:
+                    # Display the status icon
+                    status = st.session_state.audio_generation_status.get(i)
+                    if status == "cached":
+                        st.markdown("☁️ _From cache_")
+                    elif status == "generated":
+                        st.markdown("✨ _Newly generated_")
+
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                 if dialogue:
                     if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
                         with st.spinner(f"Regenerating audio for line {i+1}..."):
                             # --- NEW LOGIC: Also apply for regeneration ---
                             spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                            new_path, error = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                            # Force regeneration and capture the new status
+                            new_path, error, new_status = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
                             if error:
                                 st.error(f"Failed: {error}")
                             else:
                                 st.session_state.generated_audio_paths[i] = new_path
-                                st.success("Audio updated!")
-                                st.rerun()
+                                st.session_state.audio_generation_status[i] = new_status
+                                st.success("Audio updated!"); st.rerun()
 
 def display_video_tab(script):
     """Renders the UI for the video generation tab."""

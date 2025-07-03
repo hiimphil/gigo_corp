@@ -33,9 +33,10 @@ def get_elevenlabs_client():
 def generate_speech_for_line(character_id, text, force_regenerate=False):
     """
     Generates an audio file from text using ElevenLabs TTS, with caching.
+    Returns the file path, an error message, and a status ('cached' or 'generated').
     """
     if not text or not text.strip():
-        return None, None 
+        return None, None, None
 
     # Create a unique ID for this text and voice combination
     unique_string = f"{text}-{character_id}"
@@ -52,7 +53,8 @@ def generate_speech_for_line(character_id, text, force_regenerate=False):
                 response.raise_for_status()
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
                     temp_audio_file.write(response.content)
-                    return temp_audio_file.name, None
+                    # Return 'cached' status
+                    return temp_audio_file.name, None, "cached"
             except Exception as e:
                 print(f"Failed to download cached audio, will regenerate. Error: {e}")
     
@@ -60,12 +62,12 @@ def generate_speech_for_line(character_id, text, force_regenerate=False):
     print(f"CACHE MISS: Generating new audio for '{text}'")
     client, error = get_elevenlabs_client()
     if error:
-        return None, error
+        return None, error, None
 
     voice_id_str = CHARACTER_VOICE_MAP.get(character_id.lower(), CHARACTER_VOICE_MAP['default'])
 
     if "placeholder" in voice_id_str:
-        return None, f"Character '{character_id}' is using a placeholder Voice ID."
+        return None, f"Character '{character_id}' is using a placeholder Voice ID.", None
 
     try:
         audio_bytes = client.text_to_speech.convert(
@@ -81,15 +83,15 @@ def generate_speech_for_line(character_id, text, force_regenerate=False):
         # Upload the new file to Firebase Storage
         download_url, upload_error = db.upload_audio_to_storage(local_path, text_hash)
         if upload_error:
-            return None, upload_error
+            return None, upload_error, None
         
         # Save the new URL to the Firestore cache
         db.set_audio_cache_entry(text_hash, download_url, text)
-        
-        return local_path, None
-    except Exception as e:
-        return None, f"An unexpected error occurred during ElevenLabs TTS generation: {e}"
 
+        # Return 'generated' status
+        return local_path, None, "generated"
+    except Exception as e:
+        return None, f"An unexpected error occurred during ElevenLabs TTS generation: {e}", None
 
 def change_voice_from_audio(character_id, audio_path):
     """
@@ -119,6 +121,4 @@ def change_voice_from_audio(character_id, audio_path):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
             save(audio_bytes, temp_audio_file.name)
             return temp_audio_file.name, None
-    except Exception as e:
-        return None, f"An unexpected error occurred during ElevenLabs STS generation: {e}"
 
