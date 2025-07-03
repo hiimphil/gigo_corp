@@ -17,7 +17,7 @@ import subprocess
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.1
+BACKGROUND_AUDIO_VOLUME = 0.5
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
@@ -72,10 +72,9 @@ def get_audio_analysis_data(audio_path):
 
     try:
         audio_clip = AudioFileClip(audio_path)
-        # --- AUDIO FIX: Use the correct to_mono() method ---
-        if audio_clip.nchannels > 1:
-            audio_clip = audio_clip.to_mono()
-
+        
+        # The problematic .to_mono() call has been removed as requested.
+        
         duration = audio_clip.duration
         total_frames = int(duration * FPS)
         
@@ -83,6 +82,9 @@ def get_audio_analysis_data(audio_path):
         for i in range(total_frames):
             current_time = float(i) / FPS
             sample = audio_clip.get_frame(current_time)
+            # For stereo audio, take the average of the channels for volume calculation
+            if sample.ndim > 1:
+                sample = sample.mean(axis=1)
             volume = np.max(np.abs(sample))
             
             if volume < SILENCE_THRESHOLD:
@@ -185,8 +187,8 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
                 # To keep audio and video tracks aligned, we need to create a silent clip
                 # for lines without dialogue. We can't directly use AudioFileClip(None, ...).
                 # The easiest way is to create a silent numpy array and make a clip from it.
-                silent_array = np.zeros((int(duration * 44100), 1)) # 44100 is a standard sample rate
                 from moviepy.editor import AudioArrayClip
+                silent_array = np.zeros((int(duration * 44100), 1))
                 audio_scenes.append(AudioArrayClip(silent_array, fps=44100))
 
 
