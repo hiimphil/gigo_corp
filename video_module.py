@@ -8,6 +8,8 @@ from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip,
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 import math
+import tempfile # Import tempfile for creating temporary directories
+import shutil # Import shutil for cleaning up directories
 
 # --- Configuration ---
 FPS = 12
@@ -154,73 +156,81 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
 
 
 def create_video_from_script(script_text, audio_paths_dict, background_audio_path=None):
-    """Generates a full cartoon video using the new dot tracking logic."""
-    lines = script_text.strip().split('\n')
-    scene_clips = []
+    """
+    Generates a full cartoon video using a memory-efficient, file-based approach.
+    """
+    temp_dir = tempfile.mkdtemp()
+    scene_file_paths = []
     previous_character = None
 
-    for i, line in enumerate(lines):
-        char, action, direction_override, dialogue = cgm.parse_script_line(line)
-        if not char:
-            continue
-        audio_path = audio_paths_dict.get(i)
-        scene_clip, error = create_scene_clip(char, action, direction_override, dialogue, audio_path, previous_character)
-        if error:
-            return None, error
-        if scene_clip:
-            scene_clips.append(scene_clip)
-        previous_character = char.lower()
-
-    if not scene_clips:
-        return None, "No scenes were generated. Check your image paths and script."
-
-    # Create the main cartoon body by combining the scenes
-    main_cartoon_body = concatenate_videoclips(scene_clips)
-
-    # Determine which background audio to use (uploaded or default)
-    final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
-    
-    if final_bg_audio_path:
-        try:
-            background_clip = AudioFileClip(final_bg_audio_path).fx(volumex, BACKGROUND_AUDIO_VOLUME)
-            background_clip = background_clip.set_duration(main_cartoon_body.duration)
-
-            if main_cartoon_body.audio:
-                # Mix the dialogue with the background music
-                combined_audio = CompositeAudioClip([main_cartoon_body.audio, background_clip])
-                main_cartoon_body.audio = combined_audio
-            else:
-                # If no dialogue, just use the background music
-                main_cartoon_body.audio = background_clip
-            
-        except Exception as e:
-            return None, f"Failed to process background audio: {e}"
-
-    # --- Add Opening Sequence ---
-    final_clips_to_join = []
-    if os.path.exists(OPENING_SEQUENCE_PATH):
-        try:
-            # Load the opening sequence and ensure it's the correct size
-            opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH).resize(width=STANDARD_WIDTH, height=STANDARD_HEIGHT)
-            final_clips_to_join.append(opening_clip)
-        except Exception as e:
-            return None, f"Failed to load opening sequence video: {e}"
-
-    final_clips_to_join.append(main_cartoon_body)
-    
-    # Concatenate the final list of clips (opening sequence + main cartoon)
-    final_video = concatenate_videoclips(final_clips_to_join)
-
-    output_dir = "Output_Cartoons"
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = random.randint(1000, 9999)
-    final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
-
     try:
+        lines = script_text.strip().split('\n')
+        for i, line in enumerate(lines):
+            char, action, direction_override, dialogue = cgm.parse_script_line(line)
+            if not char: continue
+            
+            audio_path = audio_paths_dict.get(i)
+            scene_clip, error = create_scene_clip(char, action, direction_override, dialogue, audio_path, previous_character)
+            
+            if error: return None, error
+            if not scene_clip: continue
+            
+            # --- MEMORY FIX: Write each scene to a temporary file ---
+            scene_path = os.path.join(temp_dir, f"scene_{i}.mp4")
+            scene_clip.write_videofile(scene_path, codec='libx264', audio_codec='aac', fps=FPS)
+            scene_file_paths.append(scene_path)
+            
+            previous_character = char.lower()
+
+        if not scene_file_paths:
+            return None, "No scenes were generated."
+
+        # --- MEMORY FIX: Load clips from files and concatenate ---
+        clips_to_concatenate = [VideoFileClip(path) for path in scene_file_paths]
+        main_cartoon_body = concatenate_videoclips(clips_to_concatenate)
+
+        # --- Background Audio and Opening Sequence Logic ---
+        final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
+        if final_bg_audio_path:
+            try:
+                background_clip = AudioFileClip(final_bg_audio_path).fx(volumex, BACKGROUND_AUDIO_VOLUME)
+                background_clip = background_clip.set_duration(main_cartoon_body.duration)
+                if main_cartoon_body.audio:
+                    combined_audio = CompositeAudioClip([main_cartoon_body.audio, background_clip])
+                    main_cartoon_body.audio = combined_audio
+                else:
+                    main_cartoon_body.audio = background_clip
+            except Exception as e:
+                return None, f"Failed to process background audio: {e}"
+
+        final_clips_to_join = []
+        if os.path.exists(OPENING_SEQUENCE_PATH):
+            try:
+                opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
+                if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
+                     return None, f"OpeningSequence.mp4 is not {STANDARD_WIDTH}x{STANDARD_HEIGHT}."
+                final_clips_to_join.append(opening_clip)
+            except Exception as e:
+                return None, f"Failed to load opening sequence: {e}"
+
+        final_clips_to_join.append(main_cartoon_body)
+        final_video = concatenate_videoclips(final_clips_to_join)
+
+        # --- Final Output ---
+        output_dir = "Output_Cartoons"
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = random.randint(1000, 9999)
+        final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
+
         final_video.write_videofile(
             final_video_path, codec='libx264', audio_codec='aac',
             temp_audiofile='temp-audio.m4a', remove_temp=True, fps=FPS
         )
         return final_video_path, None
+
     except Exception as e:
-        return None, f"MoviePy failed to write the video file: {e}"
+        return None, f"MoviePy failed during video creation: {e}"
+    finally:
+        # --- MEMORY FIX: Clean up the temporary directory ---
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
