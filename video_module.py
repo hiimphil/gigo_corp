@@ -8,8 +8,9 @@ from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip,
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 import math
-import tempfile # Import tempfile for creating temporary directories
-import shutil # Import shutil for cleaning up directories
+import tempfile 
+import shutil 
+import subprocess # New import for running ffmpeg
 
 # --- Configuration ---
 FPS = 12
@@ -177,7 +178,7 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
             
             # --- MEMORY FIX: Write each scene to a temporary file ---
             scene_path = os.path.join(temp_dir, f"scene_{i}.mp4")
-            scene_clip.write_videofile(scene_path, codec='libx264', audio_codec='aac', fps=FPS)
+            scene_clip.write_videofile(scene_path, codec='libx264', audio_codec='aac', fps=FPS, logger=None)
             scene_file_paths.append(scene_path)
             
             previous_character = char.lower()
@@ -185,11 +186,26 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
         if not scene_file_paths:
             return None, "No scenes were generated."
 
-        # --- MEMORY FIX: Load clips from files and concatenate ---
-        clips_to_concatenate = [VideoFileClip(path) for path in scene_file_paths]
-        main_cartoon_body = concatenate_videoclips(clips_to_concatenate)
+        # --- MEMORY FIX: Use ffmpeg for concatenation ---
+        concat_list_path = os.path.join(temp_dir, "concat.txt")
+        with open(concat_list_path, "w") as f:
+            for path in scene_file_paths:
+                f.write(f"file '{os.path.abspath(path)}'\n")
+        
+        main_body_path = os.path.join(temp_dir, "main_body.mp4")
+        ffmpeg_command = [
+            "ffmpeg",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_list_path,
+            "-c", "copy",
+            main_body_path
+        ]
+        subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+        
+        main_cartoon_body = VideoFileClip(main_body_path)
+        # --- End Memory Fix ---
 
-        # --- Background Audio and Opening Sequence Logic ---
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
         if final_bg_audio_path:
             try:
@@ -227,6 +243,10 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
             temp_audiofile='temp-audio.m4a', remove_temp=True, fps=FPS
         )
         return final_video_path, None
+
+    except subprocess.CalledProcessError as e:
+        # Provide detailed ffmpeg error output for debugging
+        return None, f"FFMPEG concatenation failed.\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}"
 
     except Exception as e:
         return None, f"MoviePy failed during video creation: {e}"
