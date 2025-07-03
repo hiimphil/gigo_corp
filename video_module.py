@@ -3,7 +3,7 @@ import os
 import random
 import numpy as np
 from PIL import Image
-from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
+from moviepy.editor import (AudioFileClip, VideoFileClip, 
                             CompositeVideoClip, concatenate_videoclips, CompositeAudioClip)
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
@@ -65,8 +65,47 @@ def find_mouth_shape_path(character, mouth_shape):
         return path, None
     return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
 
-def create_scene_clip(character, action, direction_override, dialogue, audio_path, prev_char):
-    """Creates a single video clip for one line of dialogue using dot tracking and lip-sync."""
+def create_scene_video_from_frames(frame_dir, output_path, duration, audio_path):
+    """
+    Uses ffmpeg to create a video from a directory of image frames.
+    This is highly memory-efficient.
+    """
+    # Create the video from the image sequence
+    video_command = [
+        "ffmpeg",
+        "-framerate", str(FPS),
+        "-i", os.path.join(frame_dir, "frame_%04d.png"),
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-y", # Overwrite output file if it exists
+        output_path
+    ]
+    subprocess.run(video_command, check=True, capture_output=True, text=True)
+
+    # If there's audio, attach it to the newly created video
+    if audio_path:
+        final_output_path = output_path.replace(".mp4", "_final.mp4")
+        audio_command = [
+            "ffmpeg",
+            "-i", output_path,
+            "-i", audio_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            "-y",
+            final_output_path
+        ]
+        subprocess.run(audio_command, check=True, capture_output=True, text=True)
+        return final_output_path
+        
+    return output_path
+
+
+def create_scene_clip_memory_efficient(character, action, direction_override, dialogue, audio_path, prev_char, scene_index, parent_temp_dir):
+    """
+    Generates all frames for a scene, saves them to disk, and then uses ffmpeg
+    to create the final video clip. This is the most memory-efficient method.
+    """
     direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
     
     # --- Load Base Image and Find Dots ---
@@ -108,7 +147,11 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
     for shape_name in ["closed", "open-small", "open-large"]:
         path, error = find_mouth_shape_path(character, shape_name)
         if error: return None, error
-        mouth_shapes[shape_name] = np.array(Image.open(path).convert("RGBA"))
+        mouth_shapes[shape_name] = Image.open(path).convert("RGBA")
+
+    # Create a dedicated directory for this scene's frames
+    scene_frame_dir = os.path.join(parent_temp_dir, f"scene_{scene_index}_frames")
+    os.makedirs(scene_frame_dir, exist_ok=True)
 
     for i in range(total_frames_in_scene):
         current_time = float(i) / FPS
@@ -144,21 +187,20 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
         
         # Paste the mouth onto the base image
         frame_pil.paste(mouth_pil, paste_pos, mouth_pil)
-        final_frames.append(np.array(frame_pil))
+        
+        # Save the frame to disk instead of holding it in memory
+        frame_pil.save(os.path.join(scene_frame_dir, f"frame_{i:04d}.png"))
 
-    if not final_frames:
-        return None, "Failed to generate any frames for the scene."
-
-    scene_video = ImageSequenceClip(final_frames, fps=FPS)
-    if audio_clip:
-        scene_video = scene_video.set_audio(audio_clip)
-
-    return scene_video, None
+    # Now, use ffmpeg to create the video from the saved frames
+    scene_video_path = os.path.join(parent_temp_dir, f"scene_{scene_index}.mp4")
+    final_scene_path = create_scene_video_from_frames(scene_frame_dir, scene_video_path, duration, audio_path)
+    
+    return final_scene_path, None
 
 
 def create_video_from_script(script_text, audio_paths_dict, background_audio_path=None):
     """
-    Generates a full cartoon video using a memory-efficient, file-based approach.
+    Generates a full cartoon video using the highly memory-efficient, frame-by-frame approach.
     """
     temp_dir = tempfile.mkdtemp()
     scene_file_paths = []
@@ -171,22 +213,19 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
             if not char: continue
             
             audio_path = audio_paths_dict.get(i)
-            scene_clip, error = create_scene_clip(char, action, direction_override, dialogue, audio_path, previous_character)
+            # Call the new memory-efficient function
+            scene_path, error = create_scene_clip_memory_efficient(char, action, direction_override, dialogue, audio_path, previous_character, i, temp_dir)
             
             if error: return None, error
-            if not scene_clip: continue
+            if not scene_path: continue
             
-            # --- MEMORY FIX: Write each scene to a temporary file ---
-            scene_path = os.path.join(temp_dir, f"scene_{i}.mp4")
-            scene_clip.write_videofile(scene_path, codec='libx264', audio_codec='aac', fps=FPS, logger=None)
             scene_file_paths.append(scene_path)
-            
             previous_character = char.lower()
 
         if not scene_file_paths:
             return None, "No scenes were generated."
 
-        # --- MEMORY FIX: Use ffmpeg for concatenation ---
+        # Use ffmpeg to concatenate the final scene files
         concat_list_path = os.path.join(temp_dir, "concat.txt")
         with open(concat_list_path, "w") as f:
             for path in scene_file_paths:
