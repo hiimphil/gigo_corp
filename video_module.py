@@ -72,33 +72,69 @@ def get_audio_analysis_data(audio_path):
         return 1.5, ["closed"] * int(1.5 * FPS), None
 
     try:
-        with AudioFileClip(audio_path) as audio_clip:
-            duration = audio_clip.duration
-            total_frames = int(duration * FPS)
+        audio_clip = AudioFileClip(audio_path)
+        duration = audio_clip.duration
+        total_frames = int(duration * FPS)
+        
+        mouth_shapes = []
+        for i in range(total_frames):
+            current_time = float(i) / FPS
+            sample = audio_clip.get_frame(current_time)
+            if sample.ndim > 1:
+                sample = sample.mean(axis=1)
+            volume = np.max(np.abs(sample))
             
-            mouth_shapes = []
-            for i in range(total_frames):
-                current_time = float(i) / FPS
-                sample = audio_clip.get_frame(current_time)
-                if sample.ndim > 1:
-                    sample = sample.mean(axis=1)
-                volume = np.max(np.abs(sample))
-                
-                if volume < SILENCE_THRESHOLD:
-                    mouth_shapes.append("closed")
-                elif volume < SMALL_MOUTH_THRESHOLD:
-                    mouth_shapes.append("open-small")
-                else:
-                    mouth_shapes.append("open-large")
-            
-            return duration, mouth_shapes, None
+            if volume < SILENCE_THRESHOLD:
+                mouth_shapes.append("closed")
+            elif volume < SMALL_MOUTH_THRESHOLD:
+                mouth_shapes.append("open-small")
+            else:
+                mouth_shapes.append("open-large")
+        
+        # Return the clip object itself for later use
+        return duration, mouth_shapes, audio_clip
     except Exception as e:
         return None, None, f"Error analyzing audio clip {audio_path}: {e}"
 
-def generate_scene_frames(base_image_np, mouth_pils, mouth_shapes_list, transform_params, frame_dir):
-    """Generates and saves each frame for a scene to disk."""
-    scale_factor, rotation_angle, position_center = transform_params
-    for i, mouth_shape_name in enumerate(mouth_shapes_list):
+
+def create_scene_clip(character, action, direction_override, prev_char, duration, mouth_shapes_list):
+    """
+    Generates a silent video clip for a single scene using pre-calculated data.
+    """
+    direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
+    
+    base_image_path, error = find_base_image_path(character, direction, action)
+    if error: return None, error
+    
+    try:
+        base_image_pil = Image.open(base_image_path).convert("RGB")
+        w, h = base_image_pil.size
+        if w % 2 != 0: w -= 1
+        if h % 2 != 0: h -= 1
+        base_image_pil = base_image_pil.crop((0, 0, w, h))
+        base_image_np = np.array(base_image_pil)
+        left_dot, right_dot = find_tracking_dots(base_image_np)
+        if not left_dot or not right_dot:
+            return None, f"Tracking dots not found in {base_image_path}"
+    except Exception as e:
+        return None, f"Error processing base image {base_image_path}: {e}"
+
+    dx = right_dot[0] - left_dot[0]
+    dy = right_dot[1] - left_dot[1]
+    actual_dot_distance = math.sqrt(dx**2 + dy**2)
+    
+    scale_factor = actual_dot_distance / REFERENCE_DOT_DISTANCE
+    rotation_angle = -math.degrees(math.atan2(dy, dx))
+    position_center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
+
+    mouth_pils = {}
+    for shape_name in set(mouth_shapes_list):
+        path, error = find_mouth_shape_path(character, shape_name)
+        if error: return None, error
+        mouth_pils[shape_name] = Image.open(path).convert("RGBA")
+
+    final_frames = []
+    for mouth_shape_name in mouth_shapes_list:
         frame_pil = Image.fromarray(base_image_np)
         mouth_pil = mouth_pils[mouth_shape_name]
         
@@ -109,114 +145,104 @@ def generate_scene_frames(base_image_np, mouth_pils, mouth_shapes_list, transfor
         paste_pos = (int(position_center[0] - mouth_w / 2), int(position_center[1] - mouth_h / 2))
         
         frame_pil.paste(transformed_mouth, paste_pos, transformed_mouth)
-        frame_pil.save(os.path.join(frame_dir, f"frame_{i:04d}.png"))
+        final_frames.append(np.array(frame_pil))
 
-def create_video_from_frames(frame_dir, output_path, audio_path):
-    """Uses ffmpeg to create a video from a directory of image frames and attach audio."""
-    silent_video_path = os.path.join(os.path.dirname(output_path), "silent_temp.mp4")
-    video_command = [
-        "ffmpeg", "-y", "-framerate", str(FPS),
-        "-i", os.path.join(frame_dir, "frame_%04d.png"),
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", silent_video_path
-    ]
-    subprocess.run(video_command, check=True, capture_output=True, text=True)
+    if not final_frames:
+        return None, "Failed to generate any frames for the scene."
 
-    if audio_path and os.path.exists(audio_path):
-        audio_command = [
-            "ffmpeg", "-y", "-i", silent_video_path, "-i", audio_path,
-            "-c:v", "copy", "-c:a", "aac", "-shortest", output_path
-        ]
-        subprocess.run(audio_command, check=True, capture_output=True, text=True)
-    else:
-        shutil.move(silent_video_path, output_path)
+    return ImageSequenceClip(final_frames, fps=FPS), None
+
 
 def create_video_from_script(script_text, audio_paths_dict, background_audio_path=None):
-    """Generates a full cartoon video using a highly memory-efficient, ffmpeg-centric approach."""
+    """
+    Generates a full cartoon video using a more robust, separated audio/video pipeline.
+    """
     temp_dir = tempfile.mkdtemp()
-    scene_file_paths = []
+    video_scenes = []
+    audio_scenes = []
     previous_character = None
 
     try:
         lines = script_text.strip().split('\n')
+        scene_data = []
         for i, line in enumerate(lines):
             char, action, direction_override, dialogue = cgm.parse_script_line(line)
             if not char: continue
             
             audio_path = audio_paths_dict.get(i)
-            duration, mouth_shapes, error = get_audio_analysis_data(audio_path)
+            duration, mouth_shapes, audio_clip_or_error = get_audio_analysis_data(audio_path)
+            
+            # Check if the third returned value is an error string
+            if isinstance(audio_clip_or_error, str):
+                return None, audio_clip_or_error # Return the error message
+            
+            scene_data.append({'duration': duration, 'mouth_shapes': mouth_shapes})
+            
+            if audio_clip_or_error:
+                audio_scenes.append(audio_clip_or_error)
+            elif duration:
+                from moviepy.audio.AudioClip import AudioArrayClip
+                silent_array = np.zeros((int(duration * 44100), 1))
+                audio_scenes.append(AudioArrayClip(silent_array, fps=44100))
+
+
+        for i, line in enumerate(lines):
+            char, action, direction_override, _ = cgm.parse_script_line(line)
+            if not char: continue
+            
+            data = scene_data[i]
+            video_clip, error = create_scene_clip(char, action, direction_override, previous_character, data['duration'], data['mouth_shapes'])
+            
             if error: return None, error
-            
-            direction = direction_override or cgm.determine_logical_direction(char.lower(), previous_character)
-            base_image_path, error = find_base_image_path(char, direction, action)
-            if error: return None, error
-
-            base_image_pil = Image.open(base_image_path).convert("RGB")
-            w, h = base_image_pil.size
-            if w % 2 != 0: w -= 1
-            if h % 2 != 0: h -= 1
-            base_image_pil = base_image_pil.crop((0, 0, w, h))
-            base_image_np = np.array(base_image_pil)
-            
-            left_dot, right_dot = find_tracking_dots(base_image_np)
-            if not left_dot or not right_dot: return None, f"Tracking dots not found in {base_image_path}"
-
-            dx, dy = right_dot[0] - left_dot[0], right_dot[1] - left_dot[1]
-            scale = math.sqrt(dx**2 + dy**2) / REFERENCE_DOT_DISTANCE
-            angle = -math.degrees(math.atan2(dy, dx))
-            center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
-            transform_params = (scale, angle, center)
-
-            mouth_pils = {name: Image.open(find_mouth_shape_path(char, name)[0]).convert("RGBA") for name in set(mouth_shapes)}
-
-            scene_frame_dir = os.path.join(temp_dir, f"scene_{i}_frames")
-            os.makedirs(scene_frame_dir, exist_ok=True)
-            
-            generate_scene_frames(base_image_np, mouth_pils, mouth_shapes, transform_params, scene_frame_dir)
-            
-            scene_video_path = os.path.join(temp_dir, f"scene_{i}.mp4")
-            create_video_from_frames(scene_frame_dir, scene_video_path, audio_path)
-            scene_file_paths.append(scene_video_path)
+            if video_clip: video_scenes.append(video_clip)
             
             previous_character = char.lower()
 
-        files_to_concatenate = []
-        if os.path.exists(OPENING_SEQUENCE_PATH):
-            files_to_concatenate.append(OPENING_SEQUENCE_PATH)
-        files_to_concatenate.extend(scene_file_paths)
+        if not video_scenes:
+            return None, "No video scenes were generated."
 
-        concat_list_path = os.path.join(temp_dir, "concat.txt")
-        with open(concat_list_path, "w") as f:
-            for path in files_to_concatenate:
-                f.write(f"file '{os.path.abspath(path)}'\n")
+        main_video_body = concatenate_videoclips(video_scenes)
         
-        video_with_dialogue_path = os.path.join(temp_dir, "video_with_dialogue.mp4")
-        ffmpeg_command = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", video_with_dialogue_path]
-        subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
-        
-        video_clip = VideoFileClip(video_with_dialogue_path)
-        
+        if audio_scenes:
+            dialogue_track = concatenate_audioclips(audio_scenes)
+            main_video_body = main_video_body.set_audio(dialogue_track)
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
         if final_bg_audio_path:
-            with AudioFileClip(final_bg_audio_path) as background_clip:
-                background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME).set_duration(video_clip.duration)
-                if video_clip.audio:
-                    video_clip.audio = CompositeAudioClip([video_clip.audio, background_clip])
+            try:
+                background_clip = AudioFileClip(final_bg_audio_path).fx(volumex, BACKGROUND_AUDIO_VOLUME)
+                background_clip = background_clip.set_duration(main_video_body.duration)
+                if main_video_body.audio:
+                    combined_audio = CompositeAudioClip([main_video_body.audio, background_clip])
+                    main_video_body.audio = combined_audio
                 else:
-                    video_clip.audio = background_clip
+                    main_video_body.audio = background_clip
+            except Exception as e:
+                return None, f"Failed to process background audio: {e}"
+
+        final_clips_to_join = []
+        if os.path.exists(OPENING_SEQUENCE_PATH):
+            try:
+                opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
+                if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
+                     return None, f"OpeningSequence.mp4 is not {STANDARD_WIDTH}x{STANDARD_HEIGHT}."
+                final_clips_to_join.append(opening_clip)
+            except Exception as e:
+                return None, f"Failed to load opening sequence: {e}"
+
+        final_clips_to_join.append(main_video_body)
+        final_video = concatenate_videoclips(final_clips_to_join)
 
         output_dir = "Output_Cartoons"
         os.makedirs(output_dir, exist_ok=True)
         timestamp = random.randint(1000, 9999)
         final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
 
-        video_clip.write_videofile(
+        final_video.write_videofile(
             final_video_path, codec='libx264', audio_codec='aac',
             temp_audiofile='temp-audio.m4a', remove_temp=True, fps=FPS, logger=None
         )
         return final_video_path, None
 
-    except subprocess.CalledProcessError as e:
-        return None, f"FFMPEG failed.\nSTDERR: {e.stderr}"
     except Exception as e:
         return None, f"An unexpected error occurred during video creation: {e}"
     finally:
