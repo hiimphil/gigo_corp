@@ -6,6 +6,7 @@ from PIL import Image
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
                             CompositeVideoClip, concatenate_videoclips, CompositeAudioClip,
                             concatenate_audioclips)
+from moviepy.audio.AudioClip import AudioArrayClip # Corrected import location
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 import math
@@ -73,8 +74,6 @@ def get_audio_analysis_data(audio_path):
     try:
         audio_clip = AudioFileClip(audio_path)
         
-        # The problematic .to_mono() call has been removed as requested.
-        
         duration = audio_clip.duration
         total_frames = int(duration * FPS)
         
@@ -82,7 +81,6 @@ def get_audio_analysis_data(audio_path):
         for i in range(total_frames):
             current_time = float(i) / FPS
             sample = audio_clip.get_frame(current_time)
-            # For stereo audio, take the average of the channels for volume calculation
             if sample.ndim > 1:
                 sample = sample.mean(axis=1)
             volume = np.max(np.abs(sample))
@@ -110,14 +108,10 @@ def create_scene_clip(character, action, direction_override, prev_char, duration
     
     try:
         base_image_pil = Image.open(base_image_path).convert("RGB")
-
-        # --- FFMPEG FIX: Ensure video dimensions are even numbers ---
         w, h = base_image_pil.size
         if w % 2 != 0: w -= 1
         if h % 2 != 0: h -= 1
         base_image_pil = base_image_pil.crop((0, 0, w, h))
-        # --- END OF FIX ---
-
         base_image_np = np.array(base_image_pil)
         left_dot, right_dot = find_tracking_dots(base_image_np)
         if not left_dot or not right_dot:
@@ -130,13 +124,11 @@ def create_scene_clip(character, action, direction_override, prev_char, duration
     actual_dot_distance = math.sqrt(dx**2 + dy**2)
     
     scale_factor = actual_dot_distance / REFERENCE_DOT_DISTANCE
-    # --- ROTATION FIX: Negate the angle for correct orientation ---
     rotation_angle = -math.degrees(math.atan2(dy, dx))
     position_center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
 
-    # Load mouth shapes once
     mouth_pils = {}
-    for shape_name in set(mouth_shapes_list): # Only load the shapes we actually need
+    for shape_name in set(mouth_shapes_list):
         path, error = find_mouth_shape_path(character, shape_name)
         if error: return None, error
         mouth_pils[shape_name] = Image.open(path).convert("RGBA")
@@ -146,7 +138,6 @@ def create_scene_clip(character, action, direction_override, prev_char, duration
         frame_pil = Image.fromarray(base_image_np)
         mouth_pil = mouth_pils[mouth_shape_name]
         
-        # Apply transformations
         transformed_mouth = mouth_pil.resize((int(mouth_pil.width * scale_factor), int(mouth_pil.height * scale_factor)), Image.Resampling.LANCZOS)
         transformed_mouth = transformed_mouth.rotate(rotation_angle, expand=True, resample=Image.BICUBIC)
         
@@ -173,21 +164,17 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
 
     try:
         lines = script_text.strip().split('\n')
-        # --- NEW WORKFLOW: First pass to analyze all audio ---
         scene_data = []
         for i, line in enumerate(lines):
             audio_path = audio_paths_dict.get(i)
             duration, mouth_shapes, audio_clip = get_audio_analysis_data(audio_path)
-            if isinstance(audio_clip, str): # Error message was returned
+            if isinstance(audio_clip, str):
                 return None, audio_clip
             scene_data.append({'duration': duration, 'mouth_shapes': mouth_shapes})
             if audio_clip:
                 audio_scenes.append(audio_clip)
             elif duration:
-                # To keep audio and video tracks aligned, we need to create a silent clip
-                # for lines without dialogue. We can't directly use AudioFileClip(None, ...).
-                # The easiest way is to create a silent numpy array and make a clip from it.
-                from moviepy.editor import AudioArrayClip
+                # Use the corrected import for AudioArrayClip
                 silent_array = np.zeros((int(duration * 44100), 1))
                 audio_scenes.append(AudioArrayClip(silent_array, fps=44100))
 
