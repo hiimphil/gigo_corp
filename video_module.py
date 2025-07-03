@@ -91,7 +91,7 @@ def get_audio_analysis_data(audio_path):
                 else:
                     mouth_shapes.append("open-large")
             
-            return duration, mouth_shapes
+            return duration, mouth_shapes, None
     except Exception as e:
         return None, None, f"Error analyzing audio clip {audio_path}: {e}"
 
