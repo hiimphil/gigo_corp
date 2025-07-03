@@ -72,9 +72,9 @@ def get_audio_analysis_data(audio_path):
 
     try:
         audio_clip = AudioFileClip(audio_path)
-        # --- AUDIO FIX: Force audio to mono to prevent channel issues ---
+        # --- AUDIO FIX: Use the correct to_mono() method ---
         if audio_clip.nchannels > 1:
-            audio_clip = audio_clip.set_channels(1)
+            audio_clip = audio_clip.to_mono()
 
         duration = audio_clip.duration
         total_frames = int(duration * FPS)
@@ -181,10 +181,15 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
             scene_data.append({'duration': duration, 'mouth_shapes': mouth_shapes})
             if audio_clip:
                 audio_scenes.append(audio_clip)
-            elif duration: # Add silence for lines without dialogue
-                audio_scenes.append(AudioFileClip(None, duration=duration))
+            elif duration:
+                # To keep audio and video tracks aligned, we need to create a silent clip
+                # for lines without dialogue. We can't directly use AudioFileClip(None, ...).
+                # The easiest way is to create a silent numpy array and make a clip from it.
+                silent_array = np.zeros((int(duration * 44100), 1)) # 44100 is a standard sample rate
+                from moviepy.editor import AudioArrayClip
+                audio_scenes.append(AudioArrayClip(silent_array, fps=44100))
 
-        # --- Second pass to generate video frames ---
+
         for i, line in enumerate(lines):
             char, action, direction_override, _ = cgm.parse_script_line(line)
             if not char: continue
