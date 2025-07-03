@@ -4,7 +4,7 @@ import random
 import numpy as np
 from PIL import Image
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
-                            CompositeVideoClip, concatenate_videoclips)
+                            CompositeVideoClip, concatenate_videoclips, CompositeAudioClip)
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 import math
