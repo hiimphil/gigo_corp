@@ -46,11 +46,11 @@ def find_tracking_dots(image_array):
 def find_base_image_path(character, direction, action):
     """Finds the path to the mouthless base image for a character."""
     # This can be expanded with fallbacks similar to the comic generator if needed
-    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.jpg")
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.png")
     if os.path.exists(path):
         return path, None
     # Fallback to normal action
-    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.jpg")
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
     if os.path.exists(path):
         return path, None
     return None, f"No base image found for {character}/{direction}/{action} or normal fallback."
@@ -64,9 +64,7 @@ def find_mouth_shape_path(character, mouth_shape):
 
 def create_scene_clip(character, action, direction_override, dialogue, audio_path, prev_char):
     """Creates a single video clip for one line of dialogue using dot tracking and lip-sync."""
-    # Determine direction and talking state
     direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
-    talking_state = "talking" if dialogue else "nottalking"
     
     # --- Load Base Image and Find Dots ---
     base_image_path, error = find_base_image_path(character, direction, action)
