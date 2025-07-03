@@ -10,13 +10,13 @@ import comic_generator_module as cgm
 import math
 import tempfile 
 import shutil 
-import subprocess # New import for running ffmpeg
+import subprocess
 
 # --- Configuration ---
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 50%
+BACKGROUND_AUDIO_VOLUME = 0.1
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
@@ -29,10 +29,8 @@ RIGHT_DOT_COLOR = np.array([0, 0, 255]) # Pure Blue
 REFERENCE_DOT_DISTANCE = 20.0 
 
 # --- Lip-Sync Thresholds ---
-# These values determine which mouth shape is used based on audio volume.
-# You can tweak these to get the best visual result.
-SILENCE_THRESHOLD = 0.01  # Volume below this is considered silent (closed mouth)
-SMALL_MOUTH_THRESHOLD = 0.1 # Volume above SILENCE but below this uses open-small
+SILENCE_THRESHOLD = 0.01
+SMALL_MOUTH_THRESHOLD = 0.1
 
 def find_tracking_dots(image_array):
     """Scans a numpy image array to find the coordinates of the tracking dots."""
@@ -48,11 +46,9 @@ def find_tracking_dots(image_array):
 
 def find_base_image_path(character, direction, action):
     """Finds the path to the mouthless base image for a character."""
-    # This can be expanded with fallbacks similar to the comic generator if needed
     path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.png")
     if os.path.exists(path):
         return path, None
-    # Fallback to normal action
     path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
     if os.path.exists(path):
         return path, None
@@ -108,7 +104,6 @@ def create_scene_clip_memory_efficient(character, action, direction_override, di
     """
     direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
     
-    # --- Load Base Image and Find Dots ---
     base_image_path, error = find_base_image_path(character, direction, action)
     if error: return None, error
     
@@ -121,7 +116,6 @@ def create_scene_clip_memory_efficient(character, action, direction_override, di
     except Exception as e:
         return None, f"Error processing base image {base_image_path}: {e}"
 
-    # --- Calculate Transformation ---
     dx = right_dot[0] - left_dot[0]
     dy = right_dot[1] - left_dot[1]
     actual_dot_distance = math.sqrt(dx**2 + dy**2)
@@ -130,7 +124,6 @@ def create_scene_clip_memory_efficient(character, action, direction_override, di
     rotation_angle = math.degrees(math.atan2(dy, dx))
     position_center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
 
-    # --- Determine Scene Duration ---
     if audio_path and os.path.exists(audio_path):
         audio_clip = AudioFileClip(audio_path)
         duration = audio_clip.duration
@@ -138,11 +131,8 @@ def create_scene_clip_memory_efficient(character, action, direction_override, di
         duration = 1.5
         audio_clip = None
 
-    # --- Lip-Sync Frame Generation ---
-    final_frames = []
     total_frames_in_scene = int(duration * FPS)
     
-    # Load mouth shapes once
     mouth_shapes = {}
     for shape_name in ["closed", "open-small", "open-large"]:
         path, error = find_mouth_shape_path(character, shape_name)
@@ -156,36 +146,24 @@ def create_scene_clip_memory_efficient(character, action, direction_override, di
     for i in range(total_frames_in_scene):
         current_time = float(i) / FPS
         
-        # Determine which mouth to use based on audio volume
         if audio_clip:
-            # Get a small sample of the audio at the current time
             sample = audio_clip.get_frame(current_time)
-            # Get the max volume from the sample (normalized to 0-1)
             volume = np.max(np.abs(sample))
-            
-            if volume < SILENCE_THRESHOLD:
-                mouth_shape_name = "closed"
-            elif volume < SMALL_MOUTH_THRESHOLD:
-                mouth_shape_name = "open-small"
-            else:
-                mouth_shape_name = "open-large"
+            if volume < SILENCE_THRESHOLD: mouth_shape_name = "closed"
+            elif volume < SMALL_MOUTH_THRESHOLD: mouth_shape_name = "open-small"
+            else: mouth_shape_name = "open-large"
         else:
-            # If no audio, the mouth is always closed
             mouth_shape_name = "closed"
             
-        # Create the frame by compositing the mouth onto the base
         frame_pil = Image.fromarray(base_image_np)
-        mouth_pil = Image.fromarray(mouth_shapes[mouth_shape_name])
+        mouth_pil = mouth_shapes[mouth_shape_name]
         
-        # Apply transformations to the mouth
         mouth_pil = mouth_pil.resize((int(mouth_pil.width * scale_factor), int(mouth_pil.height * scale_factor)), Image.Resampling.LANCZOS)
         mouth_pil = mouth_pil.rotate(rotation_angle, expand=True, resample=Image.BICUBIC)
         
-        # Calculate top-left position for pasting
         mouth_w, mouth_h = mouth_pil.size
         paste_pos = (int(position_center[0] - mouth_w / 2), int(position_center[1] - mouth_h / 2))
         
-        # Paste the mouth onto the base image
         frame_pil.paste(mouth_pil, paste_pos, mouth_pil)
         
         # Save the frame to disk instead of holding it in memory
@@ -207,13 +185,13 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
     previous_character = None
 
     try:
+        # Step 1: Generate each scene as a separate video file
         lines = script_text.strip().split('\n')
         for i, line in enumerate(lines):
             char, action, direction_override, dialogue = cgm.parse_script_line(line)
             if not char: continue
             
             audio_path = audio_paths_dict.get(i)
-            # Call the new memory-efficient function
             scene_path, error = create_scene_clip_memory_efficient(char, action, direction_override, dialogue, audio_path, previous_character, i, temp_dir)
             
             if error: return None, error
@@ -233,18 +211,13 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
         
         main_body_path = os.path.join(temp_dir, "main_body.mp4")
         ffmpeg_command = [
-            "ffmpeg",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concat_list_path,
-            "-c", "copy",
-            main_body_path
+            "ffmpeg", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", main_body_path
         ]
         subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
         
         main_cartoon_body = VideoFileClip(main_body_path)
-        # --- End Memory Fix ---
 
+        # --- Background Audio and Opening Sequence Logic ---
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
         if final_bg_audio_path:
             try:
@@ -284,12 +257,9 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
         return final_video_path, None
 
     except subprocess.CalledProcessError as e:
-        # Provide detailed ffmpeg error output for debugging
         return None, f"FFMPEG concatenation failed.\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}"
-
     except Exception as e:
         return None, f"MoviePy failed during video creation: {e}"
     finally:
-        # --- MEMORY FIX: Clean up the temporary directory ---
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
