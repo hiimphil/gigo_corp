@@ -3,94 +3,122 @@ import os
 import random
 import numpy as np
 from PIL import Image
-
-# --- MONKEY-PATCH FOR PILLOW 10.0.0+ and moviepy ---
-# This addresses the "AttributeError: module 'PIL.Image' has no attribute 'ANTIALIAS'"
-# by adding the attribute back and pointing it to the new Resampling.LANCZOS.
-# This must be done BEFORE moviepy.editor is imported.
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
-# --- END OF PATCH ---
-
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
-                            CompositeAudioClip, concatenate_videoclips)
+                            CompositeVideoClip, concatenate_videoclips)
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
+import math
 
-# --- Configuration (HD Version) ---
+# --- Configuration ---
 FPS = 12
-# These values are now imported from the HD comic_generator_module
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
-BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 10%
+BACKGROUND_AUDIO_VOLUME = 0.5 # Set background audio to 50%
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
 OPENING_SEQUENCE_PATH = "Video/OpeningSequence.mp4"
+CARTOON_IMAGE_BASE_PATH = "Cartoon_Images/"
 
-def find_animation_frames(character, talking_state, direction, action):
-    """Finds a sequence of images for animation."""
-    base_path, _ = cgm.find_image_path(character.lower(), talking_state.lower(), direction.lower(), action.lower())
-    if not base_path:
-        return []
-    image_dir = os.path.dirname(base_path)
-    if os.path.isdir(image_dir):
-        return sorted([
-            os.path.join(image_dir, f) for f in os.listdir(image_dir)
-            if f.lower().endswith(('.jpg', '.jpeg', '.png'))
-        ])
-    return []
+# --- Tracking Dot Configuration ---
+LEFT_DOT_COLOR = np.array([0, 255, 0])  # Pure Green
+RIGHT_DOT_COLOR = np.array([0, 0, 255]) # Pure Blue
+REFERENCE_DOT_DISTANCE = 20.0 # The distance in pixels for 1.0x scale
+
+def find_tracking_dots(image_array):
+    """Scans a numpy image array to find the coordinates of the tracking dots."""
+    left_dot_coords = np.where(np.all(image_array == LEFT_DOT_COLOR, axis=-1))
+    right_dot_coords = np.where(np.all(image_array == RIGHT_DOT_COLOR, axis=-1))
+
+    # Take the first coordinate found for each dot
+    left_pos = (left_dot_coords[1][0], left_dot_coords[0][0]) if left_dot_coords[0].size > 0 else None
+    right_pos = (right_dot_coords[1][0], right_dot_coords[0][0]) if right_dot_coords[0].size > 0 else None
+
+    return left_pos, right_pos
+
+def find_base_image_path(character, direction, action):
+    """Finds the path to the mouthless base image for a character."""
+    # This can be expanded with fallbacks similar to the comic generator if needed
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.png")
+    if os.path.exists(path):
+        return path, None
+    # Fallback to normal action
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
+    if os.path.exists(path):
+        return path, None
+    return None, f"No base image found for {character}/{direction}/{action}"
+
+def find_mouth_shape_path(character, mouth_shape):
+    """Finds the path to a specific mouth shape for a character."""
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, "mouths", f"{mouth_shape}.png")
+    if os.path.exists(path):
+        return path, None
+    return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
 
 def create_scene_clip(character, action, direction_override, dialogue, audio_path, prev_char):
-    """
-    Creates a single video clip for one line of dialogue.
-    """
-    talking_state = "talking" if dialogue else "nottalking"
+    """Creates a single video clip for one line of dialogue using dot tracking."""
+    # Determine direction and talking state
     direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
-    frame_paths = find_animation_frames(character, talking_state, direction, action)
-    if not frame_paths:
-        return None, f"Could not find any images for {character} in state {talking_state}/{action}"
+    talking_state = "talking" if dialogue else "nottalking"
+    
+    # --- Load Base Image and Find Dots ---
+    base_image_path, error = find_base_image_path(character, direction, action)
+    if error: return None, error
+    
+    try:
+        base_image_pil = Image.open(base_image_path).convert("RGB")
+        base_image_np = np.array(base_image_pil)
+        left_dot, right_dot = find_tracking_dots(base_image_np)
+        if not left_dot or not right_dot:
+            return None, f"Tracking dots not found in {base_image_path}"
+    except Exception as e:
+        return None, f"Error processing base image {base_image_path}: {e}"
 
+    # --- Calculate Transformation ---
+    dx = right_dot[0] - left_dot[0]
+    dy = right_dot[1] - left_dot[1]
+    actual_dot_distance = math.sqrt(dx**2 + dy**2)
+    
+    scale_factor = actual_dot_distance / REFERENCE_DOT_DISTANCE
+    rotation_angle = math.degrees(math.atan2(dy, dx))
+    position_center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
+
+    # --- Determine Scene Duration ---
     if audio_path and os.path.exists(audio_path):
-        dialogue_clip = AudioFileClip(audio_path)
-        duration = dialogue_clip.duration
+        audio_clip = AudioFileClip(audio_path)
+        duration = audio_clip.duration
     else:
         duration = 1.5
-        dialogue_clip = None
+        audio_clip = None
 
-    unique_numpy_frames = []
-    for path in frame_paths:
-        try:
-            with Image.open(path) as img:
-                # All images are resized to the new HD standard
-                resized_img = img.resize((STANDARD_WIDTH, STANDARD_HEIGHT), Image.Resampling.LANCZOS)
-                unique_numpy_frames.append(np.array(resized_img))
-        except Exception as e:
-            return None, f"Failed to open or resize image {path}: {e}"
-
-    num_unique_frames = len(unique_numpy_frames)
+    # --- Generate Frames ---
     total_frames_in_scene = int(duration * FPS)
-    final_frame_list = []
-    if num_unique_frames == 1:
-        final_frame_list = [unique_numpy_frames[0]] * total_frames_in_scene
-    else:
-        for i in range(total_frames_in_scene):
-            frame_index = i % num_unique_frames
-            final_frame_list.append(unique_numpy_frames[frame_index])
+    final_frames = []
 
-    if not final_frame_list:
-        return None, "Failed to generate numpy frame list for the scene."
+    # For now, we'll use a simple open/closed logic. This can be expanded.
+    mouth_shape_name = "open_large" if talking_state == "talking" else "closed"
+    mouth_path, error = find_mouth_shape_path(character, mouth_shape_name)
+    if error: return None, error
 
-    video_clip = ImageSequenceClip(final_frame_list, fps=FPS)
-    if dialogue_clip:
-        video_clip = video_clip.set_audio(dialogue_clip)
+    # Load the base and mouth clips once
+    base_clip = VideoFileClip(base_image_path).set_duration(duration)
+    mouth_clip = (ImageClip(mouth_path)
+                  .set_duration(duration)
+                  .resize(scale_factor)
+                  .rotate(rotation_angle)
+                  .set_position(position_center))
 
-    return video_clip, None
+    # The final clip is a composition of the base and the transformed mouth
+    scene_video = CompositeVideoClip([base_clip, mouth_clip])
+    
+    if audio_clip:
+        scene_video = scene_video.set_audio(audio_clip)
+
+    return scene_video, None
+
 
 def create_video_from_script(script_text, audio_paths_dict, background_audio_path=None):
-    """
-    Generates a full cartoon video, now with an optional background audio track and opening sequence.
-    """
+    """Generates a full cartoon video using the new dot tracking logic."""
     lines = script_text.strip().split('\n')
     scene_clips = []
     previous_character = None
@@ -110,8 +138,10 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
     if not scene_clips:
         return None, "No scenes were generated. Check your image paths and script."
 
+    # Create the main cartoon body by combining the scenes
     main_cartoon_body = concatenate_videoclips(scene_clips)
 
+    # Determine which background audio to use (uploaded or default)
     final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
     
     if final_bg_audio_path:
@@ -120,28 +150,29 @@ def create_video_from_script(script_text, audio_paths_dict, background_audio_pat
             background_clip = background_clip.set_duration(main_cartoon_body.duration)
 
             if main_cartoon_body.audio:
+                # Mix the dialogue with the background music
                 combined_audio = CompositeAudioClip([main_cartoon_body.audio, background_clip])
                 main_cartoon_body.audio = combined_audio
             else:
+                # If no dialogue, just use the background music
                 main_cartoon_body.audio = background_clip
             
         except Exception as e:
             return None, f"Failed to process background audio: {e}"
 
+    # --- Add Opening Sequence ---
     final_clips_to_join = []
     if os.path.exists(OPENING_SEQUENCE_PATH):
         try:
-            # Note: This relies on the OpeningSequence.mp4 file being the correct size (1080x1350).
-            opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
-            # A check to prevent errors if the opening clip is the wrong size.
-            if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
-                 return None, f"OpeningSequence.mp4 is not the correct size. Expected {STANDARD_WIDTH}x{STANDARD_HEIGHT}, but got {opening_clip.w}x{opening_clip.h}."
+            # Load the opening sequence and ensure it's the correct size
+            opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH).resize(width=STANDARD_WIDTH, height=STANDARD_HEIGHT)
             final_clips_to_join.append(opening_clip)
         except Exception as e:
             return None, f"Failed to load opening sequence video: {e}"
 
     final_clips_to_join.append(main_cartoon_body)
     
+    # Concatenate the final list of clips (opening sequence + main cartoon)
     final_video = concatenate_videoclips(final_clips_to_join)
 
     output_dir = "Output_Cartoons"
