@@ -23,30 +23,37 @@ CARTOON_IMAGE_BASE_PATH = "Cartoon_Images/"
 # --- Tracking Dot Configuration ---
 LEFT_DOT_COLOR = np.array([0, 255, 0])  # Pure Green
 RIGHT_DOT_COLOR = np.array([0, 0, 255]) # Pure Blue
-REFERENCE_DOT_DISTANCE = 20.0 # The distance in pixels for 1.0x scale
+REFERENCE_DOT_DISTANCE = 20.0 
+
+# --- Lip-Sync Thresholds ---
+# These values determine which mouth shape is used based on audio volume.
+# You can tweak these to get the best visual result.
+SILENCE_THRESHOLD = 0.01  # Volume below this is considered silent (closed mouth)
+SMALL_MOUTH_THRESHOLD = 0.1 # Volume above SILENCE but below this uses open-small
 
 def find_tracking_dots(image_array):
     """Scans a numpy image array to find the coordinates of the tracking dots."""
     left_dot_coords = np.where(np.all(image_array == LEFT_DOT_COLOR, axis=-1))
     right_dot_coords = np.where(np.all(image_array == RIGHT_DOT_COLOR, axis=-1))
 
-    # Take the first coordinate found for each dot
-    left_pos = (left_dot_coords[1][0], left_dot_coords[0][0]) if left_dot_coords[0].size > 0 else None
-    right_pos = (right_dot_coords[1][0], right_dot_coords[0][0]) if right_dot_coords[0].size > 0 else None
+    if left_dot_coords[0].size == 0 or right_dot_coords[0].size == 0:
+        return None, None
 
+    left_pos = (left_dot_coords[1][0], left_dot_coords[0][0])
+    right_pos = (right_dot_coords[1][0], right_dot_coords[0][0])
     return left_pos, right_pos
 
 def find_base_image_path(character, direction, action):
     """Finds the path to the mouthless base image for a character."""
     # This can be expanded with fallbacks similar to the comic generator if needed
-    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.png")
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.jpg")
     if os.path.exists(path):
         return path, None
     # Fallback to normal action
-    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
+    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.jpg")
     if os.path.exists(path):
         return path, None
-    return None, f"No base image found for {character}/{direction}/{action}"
+    return None, f"No base image found for {character}/{direction}/{action} or normal fallback."
 
 def find_mouth_shape_path(character, mouth_shape):
     """Finds the path to a specific mouth shape for a character."""
@@ -56,7 +63,7 @@ def find_mouth_shape_path(character, mouth_shape):
     return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
 
 def create_scene_clip(character, action, direction_override, dialogue, audio_path, prev_char):
-    """Creates a single video clip for one line of dialogue using dot tracking."""
+    """Creates a single video clip for one line of dialogue using dot tracking and lip-sync."""
     # Determine direction and talking state
     direction = direction_override or cgm.determine_logical_direction(character.lower(), prev_char)
     talking_state = "talking" if dialogue else "nottalking"
@@ -91,26 +98,57 @@ def create_scene_clip(character, action, direction_override, dialogue, audio_pat
         duration = 1.5
         audio_clip = None
 
-    # --- Generate Frames ---
-    total_frames_in_scene = int(duration * FPS)
+    # --- Lip-Sync Frame Generation ---
     final_frames = []
-
-    # For now, we'll use a simple open/closed logic. This can be expanded.
-    mouth_shape_name = "open_large" if talking_state == "talking" else "closed"
-    mouth_path, error = find_mouth_shape_path(character, mouth_shape_name)
-    if error: return None, error
-
-    # Load the base and mouth clips once
-    base_clip = VideoFileClip(base_image_path).set_duration(duration)
-    mouth_clip = (ImageClip(mouth_path)
-                  .set_duration(duration)
-                  .resize(scale_factor)
-                  .rotate(rotation_angle)
-                  .set_position(position_center))
-
-    # The final clip is a composition of the base and the transformed mouth
-    scene_video = CompositeVideoClip([base_clip, mouth_clip])
+    total_frames_in_scene = int(duration * FPS)
     
+    # Load mouth shapes once
+    mouth_shapes = {}
+    for shape_name in ["closed", "open-small", "open-large"]:
+        path, error = find_mouth_shape_path(character, shape_name)
+        if error: return None, error
+        mouth_shapes[shape_name] = np.array(Image.open(path).convert("RGBA"))
+
+    for i in range(total_frames_in_scene):
+        current_time = float(i) / FPS
+        
+        # Determine which mouth to use based on audio volume
+        if audio_clip:
+            # Get a small sample of the audio at the current time
+            sample = audio_clip.get_frame(current_time)
+            # Get the max volume from the sample (normalized to 0-1)
+            volume = np.max(np.abs(sample))
+            
+            if volume < SILENCE_THRESHOLD:
+                mouth_shape_name = "closed"
+            elif volume < SMALL_MOUTH_THRESHOLD:
+                mouth_shape_name = "open-small"
+            else:
+                mouth_shape_name = "open-large"
+        else:
+            # If no audio, the mouth is always closed
+            mouth_shape_name = "closed"
+            
+        # Create the frame by compositing the mouth onto the base
+        frame_pil = Image.fromarray(base_image_np)
+        mouth_pil = Image.fromarray(mouth_shapes[mouth_shape_name])
+        
+        # Apply transformations to the mouth
+        mouth_pil = mouth_pil.resize((int(mouth_pil.width * scale_factor), int(mouth_pil.height * scale_factor)), Image.Resampling.LANCZOS)
+        mouth_pil = mouth_pil.rotate(rotation_angle, expand=True, resample=Image.BICUBIC)
+        
+        # Calculate top-left position for pasting
+        mouth_w, mouth_h = mouth_pil.size
+        paste_pos = (int(position_center[0] - mouth_w / 2), int(position_center[1] - mouth_h / 2))
+        
+        # Paste the mouth onto the base image
+        frame_pil.paste(mouth_pil, paste_pos, mouth_pil)
+        final_frames.append(np.array(frame_pil))
+
+    if not final_frames:
+        return None, "Failed to generate any frames for the scene."
+
+    scene_video = ImageSequenceClip(final_frames, fps=FPS)
     if audio_clip:
         scene_video = scene_video.set_audio(audio_clip)
 
