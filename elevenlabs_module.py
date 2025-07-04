@@ -121,4 +121,5 @@ def change_voice_from_audio(character_id, audio_path):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
             save(audio_bytes, temp_audio_file.name)
             return temp_audio_file.name, None
-
+    except Exception as e:
+        return None, f"An unexpected error occurred during ElevenLabs STS generation: {e}"
