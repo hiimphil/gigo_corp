@@ -129,6 +129,7 @@ def display_audio_tab(script):
             st.session_state.generated_audio_paths = audio_paths
             if audio_paths:
                 st.success("Audio generated!")
+                st.rerun()
     
     if st.session_state.get('generated_audio_paths'):
         st.write("---")
