@@ -129,6 +129,7 @@ def display_audio_tab(script):
             st.session_state.generated_audio_paths = audio_paths
             if audio_paths:
                 st.success("Audio generated!")
+                # Add the rerun call back to refresh the UI
                 st.rerun()
     
     if st.session_state.get('generated_audio_paths'):
@@ -136,8 +137,24 @@ def display_audio_tab(script):
         lines = script.strip().split('\n')
         for i, line in enumerate(lines):
             with st.container(border=True):
-                # ... (Individual line audio regeneration logic is unchanged)
-                pass
+                st.write(f"**Line {i+1}:** *{line.strip()}*")
+                if path := st.session_state.generated_audio_paths.get(i):
+                    st.audio(path)
+                else:
+                    st.info("_(No audio generated yet)_")
+                
+                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                if dialogue:
+                    if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
+                        with st.spinner(f"Regenerating audio for line {i+1}..."):
+                            spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
+                            new_path, error, _ = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
+                            if error:
+                                st.error(f"Failed: {error}")
+                            else:
+                                st.session_state.generated_audio_paths[i] = new_path
+                                st.success("Audio updated!")
+                                st.rerun()
 
 def display_storyboard_tab(script):
     """Renders the UI for the scene-by-scene video generation and final assembly."""
