@@ -23,6 +23,7 @@ def init_session_state():
     if 'cartoon_script' not in st.session_state: st.session_state.cartoon_script = ""
     if 'cartoon_title' not in st.session_state: st.session_state.cartoon_title = "My First Cartoon"
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
+    if 'audio_generation_status' not in st.session_state: st.session_state.audio_generation_status = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
     
