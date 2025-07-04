@@ -14,6 +14,7 @@ def _init_cartoon_keys():
     if 'cartoon_script' not in st.session_state: st.session_state.cartoon_script = ""
     if 'cartoon_title' not in st.session_state: st.session_state.cartoon_title = "My First Cartoon"
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
+    if 'audio_generation_status' not in st.session_state: st.session_state.audio_generation_status = {} # Restore status tracking
     if 'generated_scene_paths' not in st.session_state: st.session_state.generated_scene_paths = {} # New state for individual scenes
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
@@ -114,19 +115,23 @@ def display_audio_tab(script):
         st.session_state.final_cartoon_path = None
         st.session_state.generated_scene_paths = {} # Clear old scenes
         audio_paths = {}
+        audio_statuses = {} # Dictionary to hold the status
+
         lines = script.strip().split('\n')
         with st.spinner("Generating audio for each line..."):
             for i, line in enumerate(lines):
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                 if char and dialogue:
                     spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                    path, error, _ = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                    path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
                     if error:
                         st.error(f"Audio failed: {error}"); audio_paths = {}; break
                     audio_paths[i] = path
+                    audio_statuses[i] = status # Save the status
                 else:
                     audio_paths[i] = None
             st.session_state.generated_audio_paths = audio_paths
+            st.session_state.audio_generation_status = audio_statuses # Save statuses to session state
             if audio_paths:
                 st.success("Audio generated!")
                 # Add the rerun call back to refresh the UI
@@ -137,22 +142,34 @@ def display_audio_tab(script):
         lines = script.strip().split('\n')
         for i, line in enumerate(lines):
             with st.container(border=True):
-                st.write(f"**Line {i+1}:** *{line.strip()}*")
-                if path := st.session_state.generated_audio_paths.get(i):
-                    st.audio(path)
-                else:
-                    st.info("_(No audio generated yet)_")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"**Line {i+1}:** *{line.strip()}*")
+                    if path := st.session_state.generated_audio_paths.get(i):
+                        st.audio(path)
+                    else:
+                        st.info("_(No audio generated yet)_")
                 
+                with col2:
+                    # Display the status icon based on the session state
+                    status = st.session_state.audio_generation_status.get(i)
+                    if status == "cached":
+                        st.markdown("☁️ _From cache_")
+                    elif status == "generated":
+                        st.markdown("✨ _Newly generated_")
+
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                 if dialogue:
                     if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
                         with st.spinner(f"Regenerating audio for line {i+1}..."):
                             spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                            new_path, error, _ = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
+                            # Force regeneration and capture the new status
+                            new_path, error, new_status = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
                             if error:
                                 st.error(f"Failed: {error}")
                             else:
                                 st.session_state.generated_audio_paths[i] = new_path
+                                st.session_state.audio_generation_status[i] = new_status # Update status
                                 st.success("Audio updated!")
                                 st.rerun()
 
