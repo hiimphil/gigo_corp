@@ -56,7 +56,7 @@ def find_base_image_path(character, direction, action):
     path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
     if os.path.exists(path):
         return path, None
-    return None, f"No base image found for {character}/{direction}/{action} or normal fallback."
+    return None, f"No base image found for {character}/{direction}/{action} or normal."
 
 def find_mouth_shape_path(character, mouth_shape):
     """Finds the path to a specific mouth shape for a character."""
@@ -88,7 +88,7 @@ def get_mouth_shapes_for_scene(audio_path, duration):
                 else:
                     mouth_shapes.append("open-large")
             
-            return duration, mouth_shapes
+            return mouth_shapes, None
     except Exception as e:
         return None, f"Error analyzing audio clip {audio_path}: {e}"
 
@@ -125,10 +125,8 @@ def render_single_scene(line, audio_path, duration, scene_index):
         
         mouth_pils = {name: Image.open(find_mouth_shape_path(char, name)[0]).convert("RGBA") for name in set(mouth_shapes)}
 
-        frame_dir = os.path.join(temp_dir, "frames")
-        os.makedirs(frame_dir, exist_ok=True)
-
-        for i, mouth_shape_name in enumerate(mouth_shapes):
+        final_frames = []
+        for mouth_shape_name in mouth_shapes:
             frame_pil = Image.fromarray(base_image_np)
             mouth_pil = mouth_pils[mouth_shape_name]
             transformed_mouth = mouth_pil.resize((int(mouth_pil.width * scale), int(mouth_pil.height * scale)), Image.Resampling.LANCZOS)
@@ -136,22 +134,28 @@ def render_single_scene(line, audio_path, duration, scene_index):
             mouth_w, mouth_h = transformed_mouth.size
             paste_pos = (int(center[0] - mouth_w / 2), int(center[1] - mouth_h / 2))
             frame_pil.paste(transformed_mouth, paste_pos, transformed_mouth)
-            frame_pil.save(os.path.join(frame_dir, f"frame_{i:04d}.png"))
+            final_frames.append(np.array(frame_pil))
 
-        # Use ffmpeg to create the scene video with audio
+        if not final_frames:
+            return None, "Failed to generate any frames for the scene."
+
+        # Create the silent video clip from the frames
+        video_clip = ImageSequenceClip(final_frames, fps=FPS)
+
+        # --- NEW LOGIC: Attach either the real audio or silent audio ---
+        if audio_path:
+            dialogue_clip = AudioFileClip(audio_path)
+            video_clip = video_clip.set_audio(dialogue_clip)
+        else:
+            # Create a silent audio clip of the correct duration
+            silent_audio = AudioArrayClip(np.zeros((int(duration * 44100), 1)), fps=44100)
+            video_clip = video_clip.set_audio(silent_audio.set_duration(duration))
+
+        # Save the complete scene (with audio) to a file
         output_dir = "Output_Scenes"
         os.makedirs(output_dir, exist_ok=True)
         scene_video_path = os.path.join(output_dir, f"scene_{scene_index}.mp4")
-        
-        silent_video_path = os.path.join(temp_dir, "silent.mp4")
-        video_command = ["ffmpeg", "-y", "-framerate", str(FPS), "-i", os.path.join(frame_dir, "frame_%04d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", silent_video_path]
-        subprocess.run(video_command, check=True, capture_output=True, text=True)
-
-        if audio_path:
-            audio_command = ["ffmpeg", "-y", "-i", silent_video_path, "-i", audio_path, "-c:v", "copy", "-c:a", "aac", "-shortest", scene_video_path]
-            subprocess.run(audio_command, check=True, capture_output=True, text=True)
-        else:
-            shutil.copy(silent_video_path, scene_video_path)
+        video_clip.write_videofile(scene_video_path, codec='libx264', audio_codec='aac', fps=FPS, logger=None)
 
         return scene_video_path, None
 
@@ -164,33 +168,34 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
     """
     Assembles pre-rendered scene clips into a final cartoon.
     """
-    temp_dir = tempfile.mkdtemp()
     try:
-        files_to_concatenate = []
+        # --- SIMPLIFIED ASSEMBLY PROCESS ---
+        # 1. Load all scene clips (which now all have audio tracks)
+        scene_clips = [VideoFileClip(path) for path in scene_paths]
+        
+        # 2. Prepend the opening sequence
         if os.path.exists(OPENING_SEQUENCE_PATH):
-            files_to_concatenate.append(OPENING_SEQUENCE_PATH)
-        files_to_concatenate.extend(scene_paths)
+            try:
+                opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
+                if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
+                     return None, f"OpeningSequence.mp4 is not {STANDARD_WIDTH}x{STANDARD_HEIGHT}."
+                scene_clips.insert(0, opening_clip)
+            except Exception as e:
+                return None, f"Failed to load opening sequence: {e}"
 
-        concat_list_path = os.path.join(temp_dir, "concat.txt")
-        with open(concat_list_path, "w") as f:
-            for path in files_to_concatenate:
-                f.write(f"file '{os.path.abspath(path)}'\n")
+        # 3. Concatenate all video clips into the final video body
+        final_video_clip = concatenate_videoclips(scene_clips)
         
-        video_with_dialogue_path = os.path.join(temp_dir, "video_with_dialogue.mp4")
-        ffmpeg_command = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", video_with_dialogue_path]
-        subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
-        
-        final_video_clip = VideoFileClip(video_with_dialogue_path)
-        
+        # 4. Mix in the background audio
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
         if final_bg_audio_path:
             with AudioFileClip(final_bg_audio_path) as background_clip:
                 background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME).set_duration(final_video_clip.duration)
-                if final_video_clip.audio:
-                    final_video_clip.audio = CompositeAudioClip([final_video_clip.audio, background_clip])
-                else:
-                    final_video_clip.audio = background_clip
+                
+                # The main clip's audio is now guaranteed to exist
+                final_video_clip.audio = CompositeAudioClip([final_video_clip.audio, background_clip])
 
+        # 5. Write the final file
         output_dir = "Output_Cartoons"
         os.makedirs(output_dir, exist_ok=True)
         timestamp = random.randint(1000, 9999)
