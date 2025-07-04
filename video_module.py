@@ -3,8 +3,9 @@ import os
 import random
 import numpy as np
 from PIL import Image
-from moviepy.editor import (AudioFileClip, VideoFileClip, 
-                            CompositeAudioClip, concatenate_videoclips)
+from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
+                            CompositeVideoClip, concatenate_videoclips, CompositeAudioClip,
+                            concatenate_audioclips)
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 import math
@@ -39,7 +40,9 @@ def find_tracking_dots(image_array):
     left_dot_coords = np.where(np.all(image_array == LEFT_DOT_COLOR, axis=-1))
     right_dot_coords = np.where(np.all(image_array == RIGHT_DOT_COLOR, axis=-1))
 
-    if left_dot_coords[0].size == 0 or right_dot_coords[0].size == 0: return None, None
+    if left_dot_coords[0].size == 0 or right_dot_coords[0].size == 0:
+        return None, None
+
     left_pos = (left_dot_coords[1][0], left_dot_coords[0][0])
     right_pos = (right_dot_coords[1][0], right_dot_coords[0][0])
     return left_pos, right_pos
@@ -47,15 +50,18 @@ def find_tracking_dots(image_array):
 def find_base_image_path(character, direction, action):
     """Finds the path to the mouthless base image for a character."""
     path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.png")
-    if os.path.exists(path): return path, None
+    if os.path.exists(path):
+        return path, None
     path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
-    if os.path.exists(path): return path, None
-    return None, f"No base image found for {character}/{direction}/{action} or normal."
+    if os.path.exists(path):
+        return path, None
+    return None, f"No base image found for {character}/{direction}/{action} or normal fallback."
 
 def find_mouth_shape_path(character, mouth_shape):
     """Finds the path to a specific mouth shape for a character."""
     path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, "mouths", f"{mouth_shape}.png")
-    if os.path.exists(path): return path, None
+    if os.path.exists(path):
+        return path, None
     return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
 
 def get_audio_analysis_data(audio_path):
@@ -65,19 +71,27 @@ def get_audio_analysis_data(audio_path):
     """
     if not audio_path or not os.path.exists(audio_path):
         return 1.5, ["closed"] * int(1.5 * FPS)
+
     try:
         with AudioFileClip(audio_path) as audio_clip:
             duration = audio_clip.duration
             total_frames = int(duration * FPS)
+
             mouth_shapes = []
             for i in range(total_frames):
                 current_time = float(i) / FPS
                 sample = audio_clip.get_frame(current_time)
-                if sample.ndim > 1: sample = sample.mean(axis=1)
+                if sample.ndim > 1:
+                    sample = sample.mean(axis=1)
                 volume = np.max(np.abs(sample))
-                if volume < SILENCE_THRESHOLD: mouth_shapes.append("closed")
-                elif volume < SMALL_MOUTH_THRESHOLD: mouth_shapes.append("open-small")
-                else: mouth_shapes.append("open-large")
+                
+                if volume < SILENCE_THRESHOLD:
+                    mouth_shapes.append("closed")
+                elif volume < SMALL_MOUTH_THRESHOLD:
+                    mouth_shapes.append("open-small")
+                else:
+                    mouth_shapes.append("open-large")
+            
             return duration, mouth_shapes
     except Exception as e:
         return None, f"Error analyzing audio clip {audio_path}: {e}"
@@ -106,6 +120,7 @@ def render_single_scene(line, audio_path, scene_index):
         if h % 2 != 0: h -= 1
         base_image_pil = base_image_pil.crop((0, 0, w, h))
         base_image_np = np.array(base_image_pil)
+        
         left_dot, right_dot = find_tracking_dots(base_image_np)
         if not left_dot or not right_dot: return None, f"Tracking dots not found in {base_image_path}"
 
