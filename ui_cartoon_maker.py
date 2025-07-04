@@ -8,14 +8,15 @@ import ai_script_module
 import database_module
 import elevenlabs_module as tts_module
 import video_module
+from moviepy.editor import AudioFileClip # Import for getting duration
 
 def _init_cartoon_keys():
     """A safeguard function to ensure all cartoon-related keys exist in session state."""
     if 'cartoon_script' not in st.session_state: st.session_state.cartoon_script = ""
     if 'cartoon_title' not in st.session_state: st.session_state.cartoon_title = "My First Cartoon"
     if 'generated_audio_paths' not in st.session_state: st.session_state.generated_audio_paths = {}
-    if 'audio_generation_status' not in st.session_state: st.session_state.audio_generation_status = {} # Restore status tracking
-    if 'generated_scene_paths' not in st.session_state: st.session_state.generated_scene_paths = {} # New state for individual scenes
+    if 'generated_audio_durations' not in st.session_state: st.session_state.generated_audio_durations = {} # New state for durations
+    if 'generated_scene_paths' not in st.session_state: st.session_state.generated_scene_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
 
@@ -115,23 +116,25 @@ def display_audio_tab(script):
         st.session_state.final_cartoon_path = None
         st.session_state.generated_scene_paths = {} # Clear old scenes
         audio_paths = {}
-        audio_statuses = {} # Dictionary to hold the status
-
+        audio_durations = {}
         lines = script.strip().split('\n')
         with st.spinner("Generating audio for each line..."):
             for i, line in enumerate(lines):
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                 if char and dialogue:
                     spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                    path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                    path, error, _ = tts_module.generate_speech_for_line(char, spoken_dialogue)
                     if error:
                         st.error(f"Audio failed: {error}"); audio_paths = {}; break
                     audio_paths[i] = path
-                    audio_statuses[i] = status # Save the status
+                    # Get and store the duration immediately
+                    with AudioFileClip(path) as clip:
+                        audio_durations[i] = clip.duration
                 else:
                     audio_paths[i] = None
+                    audio_durations[i] = 1.5 # Default pause duration
             st.session_state.generated_audio_paths = audio_paths
-            st.session_state.audio_generation_status = audio_statuses # Save statuses to session state
+            st.session_state.generated_audio_durations = audio_durations
             if audio_paths:
                 st.success("Audio generated!")
                 # Add the rerun call back to refresh the UI
@@ -163,13 +166,14 @@ def display_audio_tab(script):
                     if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
                         with st.spinner(f"Regenerating audio for line {i+1}..."):
                             spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                            # Force regeneration and capture the new status
-                            new_path, error, new_status = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
+                            new_path, error, _ = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
                             if error:
                                 st.error(f"Failed: {error}")
                             else:
                                 st.session_state.generated_audio_paths[i] = new_path
-                                st.session_state.audio_generation_status[i] = new_status # Update status
+                                # Update the duration as well
+                                with AudioFileClip(new_path) as clip:
+                                    st.session_state.generated_audio_durations[i] = clip.duration
                                 st.success("Audio updated!")
                                 st.rerun()
 
@@ -197,6 +201,7 @@ def display_storyboard_tab(script):
                         path, error = video_module.render_single_scene(
                             line, 
                             st.session_state.generated_audio_paths.get(i),
+                            st.session_state.generated_audio_durations.get(i, 1.5), # Pass the duration
                             i
                         )
                         if error:

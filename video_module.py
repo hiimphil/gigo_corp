@@ -6,6 +6,7 @@ from PIL import Image
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
                             CompositeVideoClip, concatenate_videoclips, CompositeAudioClip,
                             concatenate_audioclips)
+from moviepy.audio.AudioClip import AudioArrayClip
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
 import math
@@ -64,19 +65,14 @@ def find_mouth_shape_path(character, mouth_shape):
         return path, None
     return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
 
-def get_audio_analysis_data(audio_path):
-    """
-    Analyzes an audio file and returns its duration and a frame-by-frame
-    list of which mouth shape to use.
-    """
+def get_mouth_shapes_for_scene(audio_path, duration):
+    """Analyzes an audio file and returns a frame-by-frame list of mouth shapes."""
     if not audio_path or not os.path.exists(audio_path):
-        return 1.5, ["closed"] * int(1.5 * FPS)
+        return ["closed"] * int(duration * FPS), None
 
     try:
         with AudioFileClip(audio_path) as audio_clip:
-            duration = audio_clip.duration
             total_frames = int(duration * FPS)
-
             mouth_shapes = []
             for i in range(total_frames):
                 current_time = float(i) / FPS
@@ -96,18 +92,16 @@ def get_audio_analysis_data(audio_path):
     except Exception as e:
         return None, f"Error analyzing audio clip {audio_path}: {e}"
 
-# --- NEW: Scene Rendering Function ---
-def render_single_scene(line, audio_path, scene_index):
-    """
-    Generates a single, self-contained video clip for one line of the script.
-    """
+# --- Single Scene Rendering Function ---
+def render_single_scene(line, audio_path, duration, scene_index):
+    """Generates a single, self-contained video clip for one line of the script."""
     temp_dir = tempfile.mkdtemp()
     try:
         char, action, direction_override, _ = cgm.parse_script_line(line)
         if not char: return None, "Could not parse line."
 
-        duration, mouth_shapes = get_audio_analysis_data(audio_path)
-        if isinstance(mouth_shapes, str): return None, mouth_shapes # Error message
+        mouth_shapes, error = get_mouth_shapes_for_scene(audio_path, duration)
+        if error: return None, error
         
         # For now, we assume the previous character is None to keep scenes independent
         direction = direction_override or cgm.determine_logical_direction(char.lower(), None)
@@ -207,6 +201,7 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
             temp_audiofile='temp-audio.m4a', remove_temp=True, fps=FPS, logger=None
         )
         return final_video_path, None
+
     except subprocess.CalledProcessError as e:
         return None, f"FFMPEG failed.\nSTDERR: {e.stderr}"
     except Exception as e:
