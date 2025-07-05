@@ -204,6 +204,12 @@ def display_scene_column(scene_index, line):
                 # Get and display the actual character image
                 try:
                     preview_image_path = get_character_preview_image(char, action, direction_override)
+                    
+                    # Debug info to see what's happening
+                    st.caption(f"Debug: char={char}, action={action}, path={preview_image_path}")
+                    if preview_image_path:
+                        st.caption(f"Path exists: {os.path.exists(preview_image_path) if isinstance(preview_image_path, str) else 'Not a string'}")
+                    
                     if preview_image_path and isinstance(preview_image_path, str) and os.path.exists(preview_image_path):
                         st.image(preview_image_path, width=250, caption=f"{char.upper()} - {action}")
                     else:
