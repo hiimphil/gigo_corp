@@ -181,9 +181,11 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
             if not os.path.exists(path):
                 return None, f"Scene {i} file not found: {path}"
             try:
+                st.write(f"  Loading scene {i}: {path}")
                 clip = VideoFileClip(path)
                 if clip is None:
                     return None, f"Scene {i} failed to load: {path}"
+                st.write(f"  Scene {i} loaded successfully, duration: {clip.duration}s")
                 scene_clips.append(clip)
             except Exception as e:
                 return None, f"Error loading scene {i} ({path}): {e}"
@@ -191,17 +193,22 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         # 2. Prepend the opening sequence
         if os.path.exists(OPENING_SEQUENCE_PATH):
             try:
+                st.write(f"  Loading opening sequence: {OPENING_SEQUENCE_PATH}")
                 opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
                 if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
                      return None, f"OpeningSequence.mp4 is not {STANDARD_WIDTH}x{STANDARD_HEIGHT}."
+                st.write(f"  Opening sequence loaded successfully")
                 scene_clips.insert(0, opening_clip)
             except Exception as e:
                 return None, f"Failed to load opening sequence: {e}"
+        else:
+            st.write(f"  No opening sequence found at {OPENING_SEQUENCE_PATH}")
 
         # 3. Validate and concatenate all video clips
         if not scene_clips:
             return None, "No valid scene clips found for assembly"
         
+        st.write(f"  Validating {len(scene_clips)} clips before concatenation")
         # Validate all clips before concatenation
         for i, clip in enumerate(scene_clips):
             if clip is None:
@@ -209,7 +216,9 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
             if not hasattr(clip, 'get_frame'):
                 return None, f"Scene clip {i} is not a valid video clip"
                 
+        st.write(f"  All clips validated, concatenating...")
         final_video_clip = concatenate_videoclips(scene_clips)
+        st.write(f"  Concatenation successful, final duration: {final_video_clip.duration}s")
         
         # 4. Mix in the background audio
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
