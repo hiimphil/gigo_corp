@@ -220,8 +220,42 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         final_video_clip = concatenate_videoclips(scene_clips)
         st.write(f"  Concatenation successful, final duration: {final_video_clip.duration}s")
         
-        # 4. TEMPORARILY SKIP background audio mixing to test
-        st.write(f"  TEMPORARILY SKIPPING background audio mixing to debug the issue")
+        # 4. Mix in the background audio (safer approach)
+        final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
+        st.write(f"  Background audio path: {final_bg_audio_path}")
+        if final_bg_audio_path:
+            try:
+                st.write(f"  Loading background audio: {final_bg_audio_path}")
+                background_clip = AudioFileClip(final_bg_audio_path)
+                st.write(f"  Background audio loaded, duration: {background_clip.duration}s")
+                
+                # Adjust background audio volume and loop/trim to match video duration
+                background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME)
+                if background_clip.duration < final_video_clip.duration:
+                    # Loop the background audio if it's shorter than the video
+                    background_clip = background_clip.loop(duration=final_video_clip.duration)
+                else:
+                    # Trim the background audio if it's longer than the video
+                    background_clip = background_clip.subclip(0, final_video_clip.duration)
+                
+                st.write(f"  Background audio adjusted to {background_clip.duration}s")
+                
+                # Check if the main clip has audio
+                if final_video_clip.audio is None:
+                    st.write(f"  Main video has no audio, using background audio only")
+                    final_video_clip = final_video_clip.set_audio(background_clip)
+                else:
+                    st.write(f"  Compositing main audio with background audio...")
+                    # Use a simpler approach - create composite audio separately
+                    composite_audio = CompositeAudioClip([final_video_clip.audio, background_clip])
+                    final_video_clip = final_video_clip.set_audio(composite_audio)
+                
+                st.write(f"  Audio mixing successful")
+            except Exception as e:
+                st.write(f"  Background audio mixing failed: {e}")
+                st.write(f"  Continuing without background audio...")
+        else:
+            st.write(f"  No background audio to mix")
 
         # 5. Write the final file
         output_dir = "Output_Cartoons"
