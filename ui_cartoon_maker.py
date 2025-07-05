@@ -175,10 +175,17 @@ def display_horizontal_storyboard(lines):
 def display_scene_column(scene_index, line):
     """Renders a single scene column in the storyboard."""
     with st.container(border=True):
-        st.write(f"**Scene {scene_index + 1}**")
-        
         # Parse the line to get character, dialogue, and duration
         char, action, direction_override, dialogue, duration = comic_generator_module.parse_script_line(line)
+        
+        # Header: Scene number, character name, and action
+        char_name = {"a": "Artie", "b": "B00L", "c": "Cling", "d": "Dusty"}.get(char, char.upper() if char else "Unknown")
+        action_display = action.capitalize() if action else "Normal"
+        if duration:
+            header_text = f"**Scene {scene_index + 1}   {char_name}   {action_display}   ({duration}s)**"
+        else:
+            header_text = f"**Scene {scene_index + 1}   {char_name}   {action_display}**"
+        st.write(header_text)
         
         # 1. Visual Section (top)
         # Show scene video if generated, otherwise placeholder
@@ -190,44 +197,21 @@ def display_scene_column(scene_index, line):
                     generate_single_scene(scene_index, line)
             else:
                 st.image("https://via.placeholder.com/300x200?text=Scene+Not+Generated", width=250)
-                if st.button("🎬 Generate Scene", key=f"gen_scene_{scene_index}", use_container_width=True):
-                    generate_single_scene(scene_index, line)
         else:
             # Show character preview image
             if char:
-                st.write(f"Character: **{char.upper()}**")
-                if action:
-                    st.write(f"Action: *{action}*")
-                if duration:
-                    st.write(f"Duration: *{duration}s*")
-                
                 # Get and display the actual character image
                 try:
                     preview_image_path = get_character_preview_image(char, action, direction_override)
                     
-                    # Debug info to see what's happening
-                    st.caption(f"Debug: char={char}, action={action}, path={preview_image_path}")
-                    if preview_image_path:
-                        st.caption(f"Path exists: {os.path.exists(preview_image_path) if isinstance(preview_image_path, str) else 'Not a string'}")
-                    else:
-                        # Show what directory it's looking for
-                        expected_dir = f"Images/{char}/nottalking/{comic_generator_module.determine_logical_direction(char, None)}/{action}"
-                        st.caption(f"Expected directory: {expected_dir}")
-                        st.caption(f"Directory exists: {os.path.exists(expected_dir)}")
-                    
                     if preview_image_path and isinstance(preview_image_path, str) and os.path.exists(preview_image_path):
-                        st.image(preview_image_path, width=250, caption=f"{char.upper()} - {action}")
+                        st.image(preview_image_path, width=250)
                     else:
                         st.image("https://via.placeholder.com/300x200?text=Click+to+Generate", width=250)
                 except Exception as e:
                     st.image("https://via.placeholder.com/300x200?text=Preview+Error", width=250)
-                    # Debug info (remove later)
-                    st.caption(f"Preview error: {str(e)}")
             else:
                 st.image("https://via.placeholder.com/300x200?text=No+Character", width=250)
-            
-            if st.button("🎬 Generate Scene", key=f"gen_scene_{scene_index}", use_container_width=True):
-                generate_single_scene(scene_index, line)
         
         # 2. Script Line Section (middle) - editable
         edited_line = st.text_area("", value=line, height=70, key=f"script_line_{scene_index}")
@@ -240,7 +224,9 @@ def display_scene_column(scene_index, line):
         
         # 3. Audio Section (bottom)
         # Show audio player if generated
-        if scene_index in st.session_state.get('generated_audio_paths', {}):
+        audio_generated = scene_index in st.session_state.get('generated_audio_paths', {})
+        
+        if audio_generated:
             audio_path = st.session_state.generated_audio_paths[scene_index]
             if audio_path and os.path.exists(audio_path):
                 st.audio(audio_path)
@@ -267,10 +253,18 @@ def display_scene_column(scene_index, line):
                     st.info(f"Silent scene ({duration}s)")
                 else:
                     st.info("Silent scene (default duration)")
+        
+        # 4. Scene Generation Button (only enabled if audio is generated or it's a silent scene)
+        scene_ready = audio_generated or not dialogue  # Ready if audio exists or it's silent
+        if scene_ready:
+            if st.button("🎬 Generate Scene", key=f"gen_scene_bottom_{scene_index}", use_container_width=True):
+                generate_single_scene(scene_index, edited_line)
+        else:
+            st.button("🎬 Generate Scene", key=f"gen_scene_disabled_{scene_index}", use_container_width=True, disabled=True, help="Generate audio first")
 
 # Helper functions for storyboard actions
 def get_character_preview_image(char, action, direction_override=None):
-    """Get the character's base image for preview in storyboard."""
+    """Get the character's base image for preview in storyboard using Cartoon_Images folder."""
     try:
         if not char:
             return None
@@ -279,8 +273,8 @@ def get_character_preview_image(char, action, direction_override=None):
         if not action:
             action = "normal"
         
-        # Determine talking state - use 'nottalking' for preview (mouth closed)
-        talking_state = "nottalking"
+        # Use Cartoon_Images directory structure
+        cartoon_images_base = "Cartoon_Images/"
         
         # Determine direction
         if direction_override:
@@ -288,15 +282,27 @@ def get_character_preview_image(char, action, direction_override=None):
         else:
             direction = comic_generator_module.determine_logical_direction(char, None)
         
-        # Find the image path using the same logic as the comic generator
-        image_path, error = comic_generator_module.find_image_path(char, talking_state, direction, action)
+        # Build path based on Cartoon_Images structure: Cartoon_Images/character/direction/action/
+        # Try different combinations to find an image
+        paths_to_try = [
+            os.path.join(cartoon_images_base, char, direction, action),
+            os.path.join(cartoon_images_base, char, direction, "normal"),
+            os.path.join(cartoon_images_base, char, "straight", action),
+            os.path.join(cartoon_images_base, char, "straight", "normal"),
+        ]
         
-        # Validate the returned path
-        if image_path and isinstance(image_path, str):
-            return image_path
-        else:
-            print(f"No image found for {char}/{talking_state}/{direction}/{action}: {error}")
-            return None
+        for path in paths_to_try:
+            if os.path.isdir(path):
+                try:
+                    images = [f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                    if images:
+                        return os.path.join(path, images[0])  # Return first image found
+                except Exception as e:
+                    print(f"Could not read directory '{path}': {e}")
+                    continue
+        
+        print(f"No image found in Cartoon_Images for {char}/{direction}/{action}")
+        return None
             
     except Exception as e:
         print(f"Error getting preview image for {char}: {e}")
