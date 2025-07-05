@@ -157,7 +157,7 @@ def get_mouth_shapes_for_scene(audio_path, duration):
         return None, f"Error analyzing audio clip {audio_path}: {e}"
 
 # --- Single Scene Rendering Function ---
-def render_single_scene(line, audio_path, duration, scene_index):
+def render_single_scene(line, audio_path, duration, scene_index, caption_override=None):
     """Generates a single, self-contained video clip for one line of the script."""
     temp_dir = tempfile.mkdtemp()
     try:
@@ -206,7 +206,9 @@ def render_single_scene(line, audio_path, duration, scene_index):
         # --- Add text overlay if dialogue exists ---
         char, action, direction_override, dialogue, custom_duration = cgm.parse_script_line(line)
         if dialogue:
-            text_overlay_image = create_text_overlay_image(dialogue)
+            # Use caption override if provided, otherwise use original dialogue
+            caption_text = caption_override if caption_override is not None else dialogue
+            text_overlay_image = create_text_overlay_image(caption_text)
             if text_overlay_image:
                 # Composite text onto each frame
                 final_frames_with_text = []

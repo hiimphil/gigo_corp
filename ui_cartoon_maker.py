@@ -19,6 +19,7 @@ def _init_cartoon_keys():
     if 'generated_scene_paths' not in st.session_state: st.session_state.generated_scene_paths = {}
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
+    if 'caption_overrides' not in st.session_state: st.session_state.caption_overrides = {}  # New: caption text overrides per scene
 
 def display(is_admin):
     """Renders the entire UI for the new Cartoon Maker workflow."""
@@ -214,13 +215,52 @@ def display_scene_column(scene_index, line):
                 st.image("https://via.placeholder.com/300x200?text=No+Character", width=250)
         
         # 2. Script Line Section (middle) - editable
-        edited_line = st.text_area("", value=line, height=70, key=f"script_line_{scene_index}")
-        if edited_line != line:
-            # Update the script in session state
-            lines = st.session_state.cartoon_script.strip().split('\n')
-            lines[scene_index] = edited_line
-            st.session_state.cartoon_script = '\n'.join(lines)
-            st.rerun()
+        script_col, caption_col = st.columns([4, 1])
+        with script_col:
+            edited_line = st.text_area("", value=line, height=70, key=f"script_line_{scene_index}")
+            if edited_line != line:
+                # Update the script in session state
+                lines = st.session_state.cartoon_script.strip().split('\n')
+                lines[scene_index] = edited_line
+                st.session_state.cartoon_script = '\n'.join(lines)
+                st.rerun()
+        
+        with caption_col:
+            st.write("")  # Spacing
+            if dialogue:  # Only show caption edit for scenes with dialogue
+                if st.button("📝", key=f"edit_caption_{scene_index}", help="Edit caption text", use_container_width=True):
+                    st.session_state[f"show_caption_editor_{scene_index}"] = not st.session_state.get(f"show_caption_editor_{scene_index}", False)
+                    st.rerun()
+        
+        # Caption override editor (appears when button is clicked)
+        if dialogue and st.session_state.get(f"show_caption_editor_{scene_index}", False):
+            current_override = st.session_state.caption_overrides.get(scene_index, dialogue)
+            caption_override = st.text_area(
+                "Caption text:", 
+                value=current_override, 
+                height=60, 
+                key=f"caption_override_{scene_index}",
+                help="Override the caption text shown in video (leave as-is to use dialogue text)"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("💾 Save Caption", key=f"save_caption_{scene_index}", use_container_width=True):
+                    if caption_override.strip() != dialogue.strip():
+                        st.session_state.caption_overrides[scene_index] = caption_override
+                    else:
+                        # Remove override if it's the same as original dialogue
+                        st.session_state.caption_overrides.pop(scene_index, None)
+                    st.session_state[f"show_caption_editor_{scene_index}"] = False
+                    st.rerun()
+            with col2:
+                if st.button("❌ Cancel", key=f"cancel_caption_{scene_index}", use_container_width=True):
+                    st.session_state[f"show_caption_editor_{scene_index}"] = False
+                    st.rerun()
+        
+        # Show current caption override status
+        if scene_index in st.session_state.caption_overrides:
+            st.info(f"📝 Caption: \"{st.session_state.caption_overrides[scene_index][:30]}{'...' if len(st.session_state.caption_overrides[scene_index]) > 30 else ''}\"", icon="ℹ️")
         
         # 3. Audio Section (bottom)
         # Show audio player if generated
@@ -356,7 +396,10 @@ def generate_single_scene(scene_index, line):
         else:
             duration = st.session_state.get('generated_audio_durations', {}).get(scene_index, 3.0)
         
-        scene_path, error = video_module.render_single_scene(line, audio_path, duration, scene_index)
+        # Get caption override if it exists
+        caption_override = st.session_state.caption_overrides.get(scene_index)
+        
+        scene_path, error = video_module.render_single_scene(line, audio_path, duration, scene_index, caption_override)
         if error:
             st.error(f"Scene generation failed: {error}")
         else:
@@ -420,8 +463,11 @@ def generate_all_scenes(lines):
             else:
                 duration = st.session_state.get('generated_audio_durations', {}).get(i, 3.0)
             
+            # Get caption override if it exists
+            caption_override = st.session_state.caption_overrides.get(i)
+            
             # Generate the scene
-            scene_path, error = video_module.render_single_scene(line, audio_path, duration, i)
+            scene_path, error = video_module.render_single_scene(line, audio_path, duration, i, caption_override)
             if error:
                 st.error(f"Scene {i+1} generation failed: {error}")
                 progress_bar.empty()
@@ -577,11 +623,13 @@ def display_storyboard_tab(script):
             else:
                 if st.button("Generate Scene", key=f"gen_scene_{i}"):
                     with st.spinner(f"Generating scene {i+1}..."):
+                        caption_override = st.session_state.caption_overrides.get(i)
                         path, error = video_module.render_single_scene(
                             line, 
                             st.session_state.generated_audio_paths.get(i),
                             st.session_state.generated_audio_durations.get(i, 1.5), # Pass the duration
-                            i
+                            i,
+                            caption_override
                         )
                         if error:
                             st.error(f"Scene generation failed: {error}")
