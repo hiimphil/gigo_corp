@@ -238,7 +238,7 @@ def display_scene_column(scene_index, line):
             caption_override = st.text_area(
                 "Caption text:", 
                 value=current_override, 
-                height=60, 
+                height=70, 
                 key=f"caption_override_{scene_index}",
                 help="Override the caption text shown in video (leave as-is to use dialogue text)"
             )
