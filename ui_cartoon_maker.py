@@ -496,7 +496,7 @@ def display_audio_tab(script):
         lines = script.strip().split('\n')
         with st.spinner("Generating audio for each line..."):
             for i, line in enumerate(lines):
-                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                char, _, _, dialogue, _ = comic_generator_module.parse_script_line(line)
                 if char and dialogue:
                     spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
                     path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
@@ -539,7 +539,7 @@ def display_audio_tab(script):
                     elif status == "generated":
                         st.markdown("✨ _Newly generated_")
 
-                char, _, _, dialogue = comic_generator_module.parse_script_line(line)
+                char, _, _, dialogue, _ = comic_generator_module.parse_script_line(line)
                 if dialogue:
                     if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
                         with st.spinner(f"Regenerating audio for line {i+1}..."):

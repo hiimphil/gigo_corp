@@ -143,7 +143,7 @@ def process_script(script_text):
         return None, "Script must have exactly 4 lines."
 
     for line_num, line in enumerate(lines, 1):
-        character, action, direction_override, dialogue = parse_script_line(line)
+        character, action, direction_override, dialogue, duration = parse_script_line(line)
         if not character:
             return None, f"Could not parse line {line_num}: '{line}'"
 
