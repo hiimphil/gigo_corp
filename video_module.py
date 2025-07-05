@@ -73,33 +73,56 @@ def create_text_overlay(dialogue, duration):
     # Position text in similar location to comic (lower portion of frame)
     text_y_position = TEXT_POSITION_Y - total_text_height
     
-    # Create text clip with comic styling
-    try:
-        text_clip = TextClip(
-            wrapped_text,
-            fontsize=TEXT_FONT_SIZE,
-            font=TEXT_FONT,
-            color=TEXT_COLOR,
-            size=(STANDARD_WIDTH - 40, None),  # Allow some padding, auto-height
-            method='caption',  # Better for multi-line text
-            align='center'
-        ).set_duration(duration).set_position(('center', text_y_position))
-        
-        return text_clip
-        
-    except Exception as e:
-        # Fallback to default font if custom font fails
-        print(f"Warning: Could not load custom font {TEXT_FONT}, using default: {e}")
-        text_clip = TextClip(
-            wrapped_text,
-            fontsize=TEXT_FONT_SIZE,
-            color=TEXT_COLOR,
-            size=(STANDARD_WIDTH - 40, None),
-            method='caption',
-            align='center'
-        ).set_duration(duration).set_position(('center', text_y_position))
-        
-        return text_clip
+    # Font fallback strategy - try custom font first, then system fonts, then default
+    fonts_to_try = [
+        TEXT_FONT,  # Custom font from comic generator
+        'Arial-Bold',  # Common system font
+        'Helvetica-Bold',  # macOS system font
+        'DejaVu-Sans-Bold',  # Linux system font
+        'Arial',  # Fallback sans-serif
+        None  # MoviePy default
+    ]
+    
+    for font_attempt in fonts_to_try:
+        try:
+            if font_attempt is None:
+                # Final fallback - no font specified
+                text_clip = TextClip(
+                    wrapped_text,
+                    fontsize=TEXT_FONT_SIZE,
+                    color=TEXT_COLOR,
+                    size=(STANDARD_WIDTH - 40, None),
+                    method='caption',
+                    align='center'
+                ).set_duration(duration).set_position(('center', text_y_position))
+            else:
+                # Try with specified font
+                text_clip = TextClip(
+                    wrapped_text,
+                    fontsize=TEXT_FONT_SIZE,
+                    font=font_attempt,
+                    color=TEXT_COLOR,
+                    size=(STANDARD_WIDTH - 40, None),
+                    method='caption',
+                    align='center'
+                ).set_duration(duration).set_position(('center', text_y_position))
+            
+            # If we got here without exception, the font worked
+            if font_attempt != TEXT_FONT:
+                print(f"Text overlay using fallback font: {font_attempt or 'default'}")
+            return text_clip
+            
+        except Exception as e:
+            if font_attempt == fonts_to_try[-1]:
+                # Last attempt failed - return error
+                print(f"Error: All font attempts failed. Last error: {e}")
+                return None
+            else:
+                # Try next font
+                print(f"Font {font_attempt} failed: {e}, trying next...")
+                continue
+    
+    return None
 REFERENCE_DOT_DISTANCE = 20.0 
 
 # --- Lip-Sync Thresholds ---
