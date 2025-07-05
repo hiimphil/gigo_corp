@@ -182,12 +182,13 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         st.write(f"🎬 Assembling {len(scene_paths)} scenes into final cartoon...")
         # --- SIMPLIFIED ASSEMBLY PROCESS ---
         # 1. Memory-efficient approach: Choose best method based on scene count
-        # For large numbers of scenes, use FFmpeg directly for better memory efficiency
-        if len(scene_paths) > 10:
-            st.write(f"  Using FFmpeg for efficient processing...")
-            return assemble_with_ffmpeg(scene_paths, background_audio_path)
-        else:
+        # Choose assembly method based on scene count
+        if len(scene_paths) <= 10:
             st.write(f"  Using MoviePy for {len(scene_paths)} scenes...")
+            # Continue with original MoviePy approach below
+        else:
+            st.write(f"  Using batch MoviePy assembly for {len(scene_paths)} scenes...")
+            return assemble_with_batch_moviepy(scene_paths, background_audio_path)
         
         # For smaller numbers, use MoviePy but with careful memory management
         scene_clips = []
@@ -430,3 +431,170 @@ def assemble_with_ffmpeg(scene_paths, background_audio_path=None):
         # Clean up temp directory if it exists
         if 'temp_dir' in locals() and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+
+def assemble_with_batch_moviepy(scene_paths, background_audio_path=None):
+    """
+    Memory-efficient video assembly using MoviePy in batches.
+    Maintains MoviePy quality while handling large scene counts.
+    """
+    import streamlit as st
+    import tempfile
+    
+    try:
+        st.write(f"  Processing {len(scene_paths)} scenes in batches...")
+        
+        # Configuration
+        BATCH_SIZE = 8  # Process 8 scenes per batch for optimal memory usage
+        temp_dir = tempfile.mkdtemp()
+        batch_files = []
+        
+        # Split scenes into batches
+        for batch_start in range(0, len(scene_paths), BATCH_SIZE):
+            batch_end = min(batch_start + BATCH_SIZE, len(scene_paths))
+            batch_scenes = scene_paths[batch_start:batch_end]
+            batch_num = (batch_start // BATCH_SIZE) + 1
+            total_batches = (len(scene_paths) + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            st.write(f"  Processing batch {batch_num}/{total_batches} (scenes {batch_start+1}-{batch_end})...")
+            
+            # Load scenes for this batch
+            batch_clips = []
+            try:
+                for i, path in enumerate(batch_scenes):
+                    if not os.path.exists(path):
+                        raise Exception(f"Scene file not found: {path}")
+                    clip = VideoFileClip(path)
+                    if clip is None:
+                        raise Exception(f"Failed to load scene: {path}")
+                    batch_clips.append(clip)
+                
+                # Concatenate this batch
+                batch_video = concatenate_videoclips(batch_clips)
+                
+                # Save batch to temporary file
+                batch_filename = f"batch_{batch_num:03d}.mp4"
+                batch_path = os.path.join(temp_dir, batch_filename)
+                
+                st.write(f"    Rendering batch {batch_num}...")
+                batch_video.write_videofile(
+                    batch_path,
+                    codec='libx264',
+                    audio_codec='aac',
+                    fps=FPS,
+                    preset='medium',
+                    ffmpeg_params=['-crf', '23'],
+                    logger=None,
+                    verbose=False
+                )
+                
+                batch_files.append(batch_path)
+                st.write(f"    ✅ Batch {batch_num} completed ({batch_video.duration:.1f}s)")
+                
+                # Clean up batch clips to free memory
+                batch_video.close()
+                for clip in batch_clips:
+                    clip.close()
+                del batch_clips, batch_video
+                
+            except Exception as e:
+                # Clean up on error
+                for clip in batch_clips:
+                    try:
+                        clip.close()
+                    except:
+                        pass
+                raise Exception(f"Error processing batch {batch_num}: {e}")
+        
+        st.write(f"  All {total_batches} batches completed. Assembling final video...")
+        
+        # Now assemble all batch files plus opening sequence
+        final_clips = []
+        
+        # Add opening sequence if it exists
+        if os.path.exists(OPENING_SEQUENCE_PATH):
+            try:
+                st.write(f"  Adding opening sequence...")
+                opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
+                if opening_clip.size == [STANDARD_WIDTH, STANDARD_HEIGHT]:
+                    final_clips.append(opening_clip)
+                else:
+                    st.warning(f"Skipping opening sequence: size mismatch")
+                    opening_clip.close()
+            except Exception as e:
+                st.warning(f"Skipping opening sequence: {e}")
+        
+        # Add all batch files
+        for batch_path in batch_files:
+            batch_clip = VideoFileClip(batch_path)
+            final_clips.append(batch_clip)
+        
+        # Concatenate all final clips
+        st.write(f"  Concatenating {len(final_clips)} segments...")
+        final_video = concatenate_videoclips(final_clips)
+        
+        # Handle background audio
+        if background_audio_path and os.path.exists(background_audio_path):
+            try:
+                st.write(f"  Adding background audio...")
+                background_clip = AudioFileClip(background_audio_path)
+                background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME)
+                
+                if background_clip.duration < final_video.duration:
+                    background_clip = background_clip.loop(duration=final_video.duration)
+                else:
+                    background_clip = background_clip.subclip(0, final_video.duration)
+                
+                if final_video.audio is None:
+                    final_video = final_video.set_audio(background_clip)
+                else:
+                    composite_audio = CompositeAudioClip([final_video.audio, background_clip])
+                    final_video = final_video.set_audio(composite_audio)
+                
+                st.write(f"  ✅ Background audio mixed successfully")
+            except Exception as e:
+                st.warning(f"Background audio mixing failed: {e}. Continuing without background audio...")
+        
+        # Write final video
+        output_dir = "Output_Cartoons"
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = random.randint(1000, 9999)
+        final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
+        
+        st.write(f"  🎬 Rendering final cartoon... This may take a moment.")
+        final_video.write_videofile(
+            final_video_path,
+            codec='libx264',
+            audio_codec='aac',
+            fps=FPS,
+            preset='medium',
+            ffmpeg_params=['-crf', '23'],
+            logger=None,
+            verbose=False
+        )
+        
+        st.write(f"  ✅ Batch assembly completed! Final duration: {final_video.duration:.1f}s")
+        st.write(f"  Saved as: {os.path.basename(final_video_path)}")
+        
+        return final_video_path, None
+        
+    except Exception as e:
+        return None, f"Batch MoviePy assembly failed: {e}"
+    
+    finally:
+        # Clean up all resources
+        try:
+            if 'final_clips' in locals():
+                for clip in final_clips:
+                    try:
+                        clip.close()
+                    except:
+                        pass
+            if 'final_video' in locals():
+                try:
+                    final_video.close()
+                except:
+                    pass
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except:
+            pass
