@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
                             CompositeVideoClip, concatenate_videoclips, CompositeAudioClip,
-                            concatenate_audioclips)
+                            concatenate_audioclips, TextClip)
 from moviepy.audio.AudioClip import AudioArrayClip
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
@@ -13,12 +13,21 @@ import math
 import tempfile 
 import shutil 
 import subprocess
+from textwrap import TextWrapper
 
 # --- Configuration ---
 FPS = 12
 STANDARD_WIDTH = cgm.PANEL_WIDTH
 STANDARD_HEIGHT = cgm.PANEL_HEIGHT
 BACKGROUND_AUDIO_VOLUME = 0.5
+
+# --- Text Overlay Configuration (matching comic styling) ---
+TEXT_FONT = cgm.MAIN_FONT_PATH  # "Fonts/Krungthep.ttf"
+TEXT_FONT_SIZE = cgm.FONT_SIZE  # 64
+TEXT_COLOR = 'white'
+TEXT_POSITION_Y = cgm.TEXT_POSITION_Y  # 500
+TEXT_WRAP_WIDTH = cgm.TEXT_WRAP_WIDTH  # 26
+TEXT_SPACING = cgm.SPACING_BETWEEN_LINES  # 8
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
@@ -28,6 +37,69 @@ CARTOON_IMAGE_BASE_PATH = "Cartoon_Images/"
 # --- Tracking Dot Configuration ---
 LEFT_DOT_COLOR = np.array([0, 255, 0])  # Pure Green
 RIGHT_DOT_COLOR = np.array([0, 0, 255]) # Pure Blue
+
+def create_text_overlay(dialogue, duration):
+    """
+    Creates a text overlay clip that matches comic styling.
+    
+    Args:
+        dialogue (str): The dialogue text to display
+        duration (float): Duration of the text display
+    
+    Returns:
+        TextClip: MoviePy text clip ready for compositing
+    """
+    if not dialogue or not dialogue.strip():
+        return None
+    
+    # Remove action cues from dialogue (text in parentheses)
+    import re
+    clean_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
+    if not clean_dialogue:
+        return None
+    
+    # Wrap text to match comic layout
+    wrapper = TextWrapper(width=TEXT_WRAP_WIDTH)
+    lines = wrapper.wrap(text=clean_dialogue)
+    wrapped_text = '\n'.join(lines)
+    
+    # Calculate text position to match comic layout
+    # In comics, text is positioned at TEXT_POSITION_Y minus the text height
+    # For video, we'll position it similarly in the lower portion of the frame
+    num_lines = len(lines)
+    line_height_estimate = TEXT_FONT_SIZE * 1.2  # Estimate line height
+    total_text_height = num_lines * line_height_estimate + (num_lines - 1) * TEXT_SPACING
+    
+    # Position text in similar location to comic (lower portion of frame)
+    text_y_position = TEXT_POSITION_Y - total_text_height
+    
+    # Create text clip with comic styling
+    try:
+        text_clip = TextClip(
+            wrapped_text,
+            fontsize=TEXT_FONT_SIZE,
+            font=TEXT_FONT,
+            color=TEXT_COLOR,
+            size=(STANDARD_WIDTH - 40, None),  # Allow some padding, auto-height
+            method='caption',  # Better for multi-line text
+            align='center'
+        ).set_duration(duration).set_position(('center', text_y_position))
+        
+        return text_clip
+        
+    except Exception as e:
+        # Fallback to default font if custom font fails
+        print(f"Warning: Could not load custom font {TEXT_FONT}, using default: {e}")
+        text_clip = TextClip(
+            wrapped_text,
+            fontsize=TEXT_FONT_SIZE,
+            color=TEXT_COLOR,
+            size=(STANDARD_WIDTH - 40, None),
+            method='caption',
+            align='center'
+        ).set_duration(duration).set_position(('center', text_y_position))
+        
+        return text_clip
 REFERENCE_DOT_DISTANCE = 20.0 
 
 # --- Lip-Sync Thresholds ---
@@ -141,6 +213,14 @@ def render_single_scene(line, audio_path, duration, scene_index):
 
         # Create the silent video clip from the frames
         video_clip = ImageSequenceClip(final_frames, fps=FPS)
+
+        # --- Add text overlay if dialogue exists ---
+        char, action, direction_override, dialogue, custom_duration = cgm.parse_script_line(line)
+        if dialogue:
+            text_overlay = create_text_overlay(dialogue, duration)
+            if text_overlay:
+                # Composite text over video
+                video_clip = CompositeVideoClip([video_clip, text_overlay])
 
         # --- NEW LOGIC: Attach either the real audio or silent audio ---
         if audio_path:
