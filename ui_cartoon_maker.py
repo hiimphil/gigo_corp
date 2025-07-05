@@ -123,12 +123,12 @@ def display_audio_tab(script):
                 char, _, _, dialogue = comic_generator_module.parse_script_line(line)
                 if char and dialogue:
                     spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                    path, error = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                    path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
                     if error:
                         st.error(f"Audio failed: {error}"); audio_paths = {}; break
                     audio_paths[i] = path
-                    # Set status as generated (assuming it's newly generated)
-                    st.session_state.audio_generation_status[i] = "generated"
+                    # Set status from the actual function return
+                    st.session_state.audio_generation_status[i] = status or "generated"
                     # Get and store the duration immediately
                     with AudioFileClip(path) as clip:
                         audio_durations[i] = clip.duration
@@ -168,12 +168,12 @@ def display_audio_tab(script):
                     if st.button("Regenerate Audio", key=f"regen_cartoon_audio_{i}", use_container_width=True):
                         with st.spinner(f"Regenerating audio for line {i+1}..."):
                             spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
-                            new_path, error = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                            new_path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
                             if error:
                                 st.error(f"Failed: {error}")
                             else:
                                 st.session_state.generated_audio_paths[i] = new_path
-                                st.session_state.audio_generation_status[i] = "generated"
+                                st.session_state.audio_generation_status[i] = status or "generated"
                                 # Update the duration as well
                                 with AudioFileClip(new_path) as clip:
                                     st.session_state.generated_audio_durations[i] = clip.duration
