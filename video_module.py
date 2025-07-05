@@ -169,10 +169,11 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
     Assembles pre-rendered scene clips into a final cartoon.
     """
     try:
-        # Debug info
-        print(f"DEBUG: Assembling {len(scene_paths)} scenes:")
+        # Debug info - using st.write so we can see it in Streamlit
+        import streamlit as st
+        st.write(f"DEBUG: Assembling {len(scene_paths)} scenes:")
         for i, path in enumerate(scene_paths):
-            print(f"  Scene {i}: {path} (exists: {os.path.exists(path)})")
+            st.write(f"  Scene {i}: {path} (exists: {os.path.exists(path)})")
         # --- SIMPLIFIED ASSEMBLY PROCESS ---
         # 1. Load all scene clips (which now all have audio tracks)
         scene_clips = []
