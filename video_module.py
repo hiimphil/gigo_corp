@@ -169,46 +169,57 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
     Assembles pre-rendered scene clips into a final cartoon.
     """
     try:
-        # Debug info - using st.write so we can see it in Streamlit
+        # Assembly info
         import streamlit as st
-        st.write(f"DEBUG: Assembling {len(scene_paths)} scenes:")
-        for i, path in enumerate(scene_paths):
-            st.write(f"  Scene {i}: {path} (exists: {os.path.exists(path)})")
+        st.write(f"🎬 Assembling {len(scene_paths)} scenes into final cartoon...")
         # --- SIMPLIFIED ASSEMBLY PROCESS ---
-        # 1. Load all scene clips (which now all have audio tracks)
+        # 1. Memory-efficient approach: Choose best method based on scene count
+        # For large numbers of scenes, use FFmpeg directly for better memory efficiency
+        if len(scene_paths) > 10:
+            st.write(f"  Using FFmpeg for efficient processing...")
+            return assemble_with_ffmpeg(scene_paths, background_audio_path)
+        else:
+            st.write(f"  Using MoviePy for {len(scene_paths)} scenes...")
+        
+        # For smaller numbers, use MoviePy but with careful memory management
         scene_clips = []
         for i, path in enumerate(scene_paths):
             if not os.path.exists(path):
+                # Clean up any loaded clips before returning error
+                for clip in scene_clips:
+                    clip.close()
                 return None, f"Scene {i} file not found: {path}"
             try:
-                st.write(f"  Loading scene {i}: {path}")
+                st.write(f"  Loading scene {i+1}/{len(scene_paths)}...")
                 clip = VideoFileClip(path)
                 if clip is None:
+                    # Clean up before returning error
+                    for existing_clip in scene_clips:
+                        existing_clip.close()
                     return None, f"Scene {i} failed to load: {path}"
-                st.write(f"  Scene {i} loaded successfully, duration: {clip.duration}s")
                 scene_clips.append(clip)
             except Exception as e:
+                # Clean up any loaded clips before returning error
+                for existing_clip in scene_clips:
+                    existing_clip.close()
                 return None, f"Error loading scene {i} ({path}): {e}"
         
         # 2. Prepend the opening sequence
         if os.path.exists(OPENING_SEQUENCE_PATH):
             try:
-                st.write(f"  Loading opening sequence: {OPENING_SEQUENCE_PATH}")
+                st.write(f"  Adding opening sequence...")
                 opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
                 if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
                      return None, f"OpeningSequence.mp4 is not {STANDARD_WIDTH}x{STANDARD_HEIGHT}."
-                st.write(f"  Opening sequence loaded successfully")
                 scene_clips.insert(0, opening_clip)
             except Exception as e:
                 return None, f"Failed to load opening sequence: {e}"
-        else:
-            st.write(f"  No opening sequence found at {OPENING_SEQUENCE_PATH}")
 
         # 3. Validate and concatenate all video clips
         if not scene_clips:
             return None, "No valid scene clips found for assembly"
         
-        st.write(f"  Validating {len(scene_clips)} clips before concatenation")
+        st.write(f"  Concatenating {len(scene_clips)} clips...")
         # Validate all clips before concatenation
         for i, clip in enumerate(scene_clips):
             if clip is None:
@@ -216,46 +227,34 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
             if not hasattr(clip, 'get_frame'):
                 return None, f"Scene clip {i} is not a valid video clip"
                 
-        st.write(f"  All clips validated, concatenating...")
         final_video_clip = concatenate_videoclips(scene_clips)
-        st.write(f"  Concatenation successful, final duration: {final_video_clip.duration}s")
+        st.write(f"  ✅ Concatenation complete! Final duration: {final_video_clip.duration:.1f}s")
         
         # 4. Mix in the background audio (safer approach)
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
-        st.write(f"  Background audio path: {final_bg_audio_path}")
         if final_bg_audio_path:
             try:
-                st.write(f"  Loading background audio: {final_bg_audio_path}")
+                st.write(f"  Adding background audio...")
                 background_clip = AudioFileClip(final_bg_audio_path)
-                st.write(f"  Background audio loaded, duration: {background_clip.duration}s")
                 
                 # Adjust background audio volume and loop/trim to match video duration
                 background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME)
                 if background_clip.duration < final_video_clip.duration:
-                    # Loop the background audio if it's shorter than the video
                     background_clip = background_clip.loop(duration=final_video_clip.duration)
                 else:
-                    # Trim the background audio if it's longer than the video
                     background_clip = background_clip.subclip(0, final_video_clip.duration)
-                
-                st.write(f"  Background audio adjusted to {background_clip.duration}s")
                 
                 # Check if the main clip has audio
                 if final_video_clip.audio is None:
-                    st.write(f"  Main video has no audio, using background audio only")
                     final_video_clip = final_video_clip.set_audio(background_clip)
                 else:
-                    st.write(f"  Compositing main audio with background audio...")
-                    # Use a simpler approach - create composite audio separately
                     composite_audio = CompositeAudioClip([final_video_clip.audio, background_clip])
                     final_video_clip = final_video_clip.set_audio(composite_audio)
                 
-                st.write(f"  Audio mixing successful")
+                st.write(f"  ✅ Background audio mixed successfully")
             except Exception as e:
-                st.write(f"  Background audio mixing failed: {e}")
-                st.write(f"  Continuing without background audio...")
-        else:
-            st.write(f"  No background audio to mix")
+                st.warning(f"Background audio mixing failed: {e}. Continuing without background audio...")
+        
 
         # 5. Write the final file
         output_dir = "Output_Cartoons"
@@ -269,15 +268,128 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         if not hasattr(final_video_clip, 'get_frame'):
             return None, "Final video clip has no get_frame method"
         
-        st.write(f"  Writing final video to: {final_video_path}")
+        st.write(f"  🎬 Rendering final video... This may take a moment.")
         final_video_clip.write_videofile(
             final_video_path, codec='libx264', audio_codec='aac',
             temp_audiofile='temp-audio.m4a', remove_temp=True, fps=FPS, logger=None
         )
-        st.write(f"  Final video written successfully")
+        st.write(f"  ✅ Final cartoon completed! Saved as: {os.path.basename(final_video_path)}")
         return final_video_path, None
 
     except subprocess.CalledProcessError as e:
         return None, f"FFMPEG failed.\nSTDERR: {e.stderr}"
     except Exception as e:
         return None, f"An unexpected error occurred during final assembly: {e}"
+    finally:
+        # Clean up all loaded clips to free memory
+        if 'scene_clips' in locals():
+            for clip in scene_clips:
+                try:
+                    clip.close()
+                except:
+                    pass
+        if 'opening_clip' in locals():
+            try:
+                opening_clip.close()
+            except:
+                pass
+        if 'final_video_clip' in locals():
+            try:
+                final_video_clip.close()
+            except:
+                pass
+
+def assemble_with_ffmpeg(scene_paths, background_audio_path=None):
+    """
+    Memory-efficient video assembly using FFmpeg directly.
+    Better for large numbers of scenes.
+    """
+    import streamlit as st
+    
+    try:
+        st.write(f"  Using FFmpeg for efficient assembly of {len(scene_paths)} scenes...")
+        
+        # Create output directory
+        output_dir = "Output_Cartoons"
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = random.randint(1000, 9999)
+        final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
+        
+        # Create temporary file list for FFmpeg concat
+        temp_dir = tempfile.mkdtemp()
+        concat_file = os.path.join(temp_dir, "concat_list.txt")
+        
+        # Build the concat file content
+        concat_content = []
+        
+        # Add opening sequence if it exists
+        if os.path.exists(OPENING_SEQUENCE_PATH):
+            concat_content.append(f"file '{os.path.abspath(OPENING_SEQUENCE_PATH)}'")
+        
+        # Add all scene files
+        for path in scene_paths:
+            abs_path = os.path.abspath(path)
+            concat_content.append(f"file '{abs_path}'")
+        
+        # Write concat file
+        with open(concat_file, 'w') as f:
+            f.write('\n'.join(concat_content))
+        
+        st.write(f"  Concatenating {len(scene_paths)} scenes with FFmpeg...")
+        
+        # Build FFmpeg command
+        ffmpeg_cmd = [
+            'ffmpeg', '-y',  # -y to overwrite output file
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file,
+            '-c', 'copy',  # Copy streams without re-encoding for speed
+            final_video_path
+        ]
+        
+        # Run FFmpeg
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            return None, f"FFmpeg concatenation failed: {result.stderr}"
+        
+        # Handle background audio if provided
+        if background_audio_path and os.path.exists(background_audio_path):
+            st.write(f"  Adding background audio...")
+            temp_video = final_video_path + "_temp.mp4"
+            os.rename(final_video_path, temp_video)
+            
+            # Mix background audio with existing audio
+            audio_cmd = [
+                'ffmpeg', '-y',
+                '-i', temp_video,
+                '-i', background_audio_path,
+                '-filter_complex', f'[1:a]volume={BACKGROUND_AUDIO_VOLUME}[bg];[0:a][bg]amix=inputs=2[out]',
+                '-map', '0:v',
+                '-map', '[out]',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                final_video_path
+            ]
+            
+            audio_result = subprocess.run(audio_cmd, capture_output=True, text=True)
+            
+            # Clean up temp file
+            if os.path.exists(temp_video):
+                os.remove(temp_video)
+            
+            if audio_result.returncode != 0:
+                st.warning(f"Background audio mixing failed, continuing without: {audio_result.stderr}")
+        
+        # Clean up temp directory
+        shutil.rmtree(temp_dir)
+        
+        st.write(f"  FFmpeg assembly completed successfully")
+        return final_video_path, None
+        
+    except Exception as e:
+        return None, f"FFmpeg assembly failed: {e}"
+    finally:
+        # Clean up temp directory if it exists
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
