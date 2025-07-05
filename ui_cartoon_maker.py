@@ -314,7 +314,7 @@ def generate_single_scene(scene_index, line):
         else:
             duration = st.session_state.get('generated_audio_durations', {}).get(scene_index, 3.0)
         
-        scene_path, error = video_module.render_single_scene(line, scene_index, audio_path, duration)
+        scene_path, error = video_module.render_single_scene(line, audio_path, duration, scene_index)
         if error:
             st.error(f"Scene generation failed: {error}")
         else:
@@ -363,7 +363,7 @@ def generate_all_scenes(lines):
             else:
                 duration = st.session_state.get('generated_audio_durations', {}).get(i, 3.0)
             
-            scene_path, error = video_module.render_single_scene(line, i, audio_path, duration)
+            scene_path, error = video_module.render_single_scene(line, audio_path, duration, i)
             if error:
                 st.error(f"Scene {i+1} generation failed: {error}")
                 return

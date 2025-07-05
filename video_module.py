@@ -97,7 +97,7 @@ def render_single_scene(line, audio_path, duration, scene_index):
     """Generates a single, self-contained video clip for one line of the script."""
     temp_dir = tempfile.mkdtemp()
     try:
-        char, action, direction_override, _ = cgm.parse_script_line(line)
+        char, action, direction_override, _, _ = cgm.parse_script_line(line)
         if not char: return None, "Could not parse line."
 
         mouth_shapes, error = get_mouth_shapes_for_scene(audio_path, duration)
