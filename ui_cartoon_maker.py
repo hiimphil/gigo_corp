@@ -146,12 +146,27 @@ def display_horizontal_storyboard(lines):
     </style>
     """, unsafe_allow_html=True)
     
-    # Create storyboard columns
-    cols = st.columns(len(lines))
+    # Create storyboard in manageable chunks to avoid narrow columns
+    scenes_per_row = 3  # Show 3 scenes per row for better width
     
-    for i, line in enumerate(lines):
-        with cols[i]:
-            display_scene_column(i, line)
+    for row_start in range(0, len(lines), scenes_per_row):
+        row_end = min(row_start + scenes_per_row, len(lines))
+        row_lines = lines[row_start:row_end]
+        
+        if len(row_lines) == 1:
+            # Single column for one scene
+            display_scene_column(row_start, row_lines[0])
+        else:
+            # Multiple columns for this row
+            cols = st.columns(len(row_lines))
+            for i, line in enumerate(row_lines):
+                scene_index = row_start + i
+                with cols[i]:
+                    display_scene_column(scene_index, line)
+        
+        # Add spacing between rows
+        if row_end < len(lines):
+            st.write("---")
     
     # Show final cartoon if assembled
     if st.session_state.get('final_cartoon_path'):
@@ -210,7 +225,7 @@ def display_scene_column(scene_index, line):
         
         # 2. Script Line Section (middle) - editable
         st.write("**Script:**")
-        edited_line = st.text_area("", value=line, height=60, key=f"script_line_{scene_index}")
+        edited_line = st.text_area("", value=line, height=70, key=f"script_line_{scene_index}")
         if edited_line != line:
             # Update the script in session state
             lines = st.session_state.cartoon_script.strip().split('\n')
