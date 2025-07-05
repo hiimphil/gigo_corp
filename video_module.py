@@ -169,6 +169,10 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
     Assembles pre-rendered scene clips into a final cartoon.
     """
     try:
+        # Debug info
+        print(f"DEBUG: Assembling {len(scene_paths)} scenes:")
+        for i, path in enumerate(scene_paths):
+            print(f"  Scene {i}: {path} (exists: {os.path.exists(path)})")
         # --- SIMPLIFIED ASSEMBLY PROCESS ---
         # 1. Load all scene clips (which now all have audio tracks)
         scene_clips = []
@@ -193,17 +197,33 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
             except Exception as e:
                 return None, f"Failed to load opening sequence: {e}"
 
-        # 3. Concatenate all video clips into the final video body
+        # 3. Validate and concatenate all video clips
+        if not scene_clips:
+            return None, "No valid scene clips found for assembly"
+        
+        # Validate all clips before concatenation
+        for i, clip in enumerate(scene_clips):
+            if clip is None:
+                return None, f"Scene clip {i} is None"
+            if not hasattr(clip, 'get_frame'):
+                return None, f"Scene clip {i} is not a valid video clip"
+                
         final_video_clip = concatenate_videoclips(scene_clips)
         
         # 4. Mix in the background audio
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
         if final_bg_audio_path:
-            with AudioFileClip(final_bg_audio_path) as background_clip:
-                background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME).set_duration(final_video_clip.duration)
-                
-                # The main clip's audio is now guaranteed to exist
-                final_video_clip.audio = CompositeAudioClip([final_video_clip.audio, background_clip])
+            try:
+                with AudioFileClip(final_bg_audio_path) as background_clip:
+                    background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME).set_duration(final_video_clip.duration)
+                    
+                    # Check if the main clip has audio
+                    if final_video_clip.audio is None:
+                        return None, "Main video clip has no audio track"
+                    
+                    final_video_clip.audio = CompositeAudioClip([final_video_clip.audio, background_clip])
+            except Exception as e:
+                return None, f"Failed to mix background audio: {e}"
 
         # 5. Write the final file
         output_dir = "Output_Cartoons"
