@@ -126,47 +126,49 @@ def display_horizontal_storyboard(lines):
     
     st.write("---")
     
-    # Create horizontal scrollable container using CSS
+    # Create horizontal scrolling storyboard
     st.markdown("""
     <style>
-    .storyboard-container {
-        display: flex;
+    .horizontal-scroll-container {
         overflow-x: auto;
-        gap: 20px;
+        white-space: nowrap;
         padding: 10px 0;
-    }
-    .scene-column {
-        min-width: 300px;
-        flex-shrink: 0;
-        border: 1px solid #ddd;
+        border: 1px solid #e0e0e0;
         border-radius: 10px;
+        background-color: #f8f9fa;
+    }
+    
+    .scene-wrapper {
+        display: inline-block;
+        vertical-align: top;
+        white-space: normal;
+        width: 320px;
+        margin: 10px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background-color: white;
         padding: 15px;
-        background-color: #f9f9f9;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Ensure Streamlit components work inside our custom containers */
+    .scene-wrapper > div {
+        width: 100% !important;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Create storyboard in manageable chunks to avoid narrow columns
-    scenes_per_row = 3  # Show 3 scenes per row for better width
+    # Start horizontal container
+    st.markdown('<div class="horizontal-scroll-container">', unsafe_allow_html=True)
     
-    for row_start in range(0, len(lines), scenes_per_row):
-        row_end = min(row_start + scenes_per_row, len(lines))
-        row_lines = lines[row_start:row_end]
-        
-        if len(row_lines) == 1:
-            # Single column for one scene
-            display_scene_column(row_start, row_lines[0])
-        else:
-            # Multiple columns for this row
-            cols = st.columns(len(row_lines))
-            for i, line in enumerate(row_lines):
-                scene_index = row_start + i
-                with cols[i]:
-                    display_scene_column(scene_index, line)
-        
-        # Add spacing between rows
-        if row_end < len(lines):
-            st.write("---")
+    # Create scene columns inside the horizontal container
+    for i, line in enumerate(lines):
+        st.markdown(f'<div class="scene-wrapper">', unsafe_allow_html=True)
+        display_scene_column(i, line)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # End horizontal container
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Show final cartoon if assembled
     if st.session_state.get('final_cartoon_path'):
@@ -198,8 +200,6 @@ def display_scene_column(scene_index, line):
         char, action, direction_override, dialogue, duration = comic_generator_module.parse_script_line(line)
         
         # 1. Visual Section (top)
-        st.write("**Visual:**")
-        
         # Show scene video if generated, otherwise placeholder
         if scene_index in st.session_state.get('generated_scene_paths', {}):
             scene_path = st.session_state.generated_scene_paths[scene_index]
@@ -224,7 +224,6 @@ def display_scene_column(scene_index, line):
                 generate_single_scene(scene_index, line)
         
         # 2. Script Line Section (middle) - editable
-        st.write("**Script:**")
         edited_line = st.text_area("", value=line, height=70, key=f"script_line_{scene_index}")
         if edited_line != line:
             # Update the script in session state
@@ -234,8 +233,6 @@ def display_scene_column(scene_index, line):
             st.rerun()
         
         # 3. Audio Section (bottom)
-        st.write("**Audio:**")
-        
         # Show audio player if generated
         if scene_index in st.session_state.get('generated_audio_paths', {}):
             audio_path = st.session_state.generated_audio_paths[scene_index]
