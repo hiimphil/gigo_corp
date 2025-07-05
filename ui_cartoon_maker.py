@@ -237,7 +237,22 @@ def display_storyboard_tab(script):
 
             with st.spinner("Assembling final cartoon... This may take a moment."):
                 # Create a list of scene paths in the correct order
-                ordered_scene_paths = [st.session_state.generated_scene_paths[i] for i in range(len(lines))]
+                ordered_scene_paths = []
+                for i in range(len(lines)):
+                    if i in st.session_state.generated_scene_paths:
+                        scene_path = st.session_state.generated_scene_paths[i]
+                        if scene_path and os.path.exists(scene_path):
+                            ordered_scene_paths.append(scene_path)
+                        else:
+                            st.error(f"Scene {i} path is missing or invalid: {scene_path}")
+                            return
+                    else:
+                        st.error(f"Scene {i} was not generated")
+                        return
+                
+                if not ordered_scene_paths:
+                    st.error("No valid scene paths found for assembly")
+                    return
                 
                 final_path, error = video_module.assemble_final_cartoon(ordered_scene_paths, bg_audio_path)
                 if error:
