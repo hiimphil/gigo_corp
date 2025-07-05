@@ -93,17 +93,301 @@ def display(is_admin):
 
 
 def display_cartoon_generator():
-    """Renders the cartoon generation workflow UI, adapted for the cartoon script."""
+    """Renders the cartoon generation workflow UI with horizontal storyboard layout."""
     st.header("🎬 Cartoon Generation")
-    tabs = st.tabs(["Step 1: Generate Audio", "Step 2: Storyboard & Assembly"])
-
+    
     script_to_use = st.session_state.get('cartoon_script', '')
+    
+    if not script_to_use.strip():
+        st.info("Write a cartoon script first.")
+        return
+    
+    # Parse script into lines for storyboard
+    lines = script_to_use.strip().split('\n')
+    
+    # Display horizontal storyboard
+    display_horizontal_storyboard(lines)
 
-    with tabs[0]:
-        display_audio_tab(script_to_use)
+def display_horizontal_storyboard(lines):
+    """Renders a horizontal storyboard with columns for each scene."""
+    st.subheader("🎭 Storyboard")
+    
+    # Global controls
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("🎤 Generate All Audio", use_container_width=True):
+            generate_all_audio(lines)
+    with col2:
+        if st.button("🎬 Generate All Scenes", use_container_width=True):
+            generate_all_scenes(lines)
+    with col3:
+        if st.button("🎯 Assemble Final Cartoon", use_container_width=True):
+            assemble_final_cartoon_ui(lines)
+    
+    st.write("---")
+    
+    # Create horizontal scrollable container using CSS
+    st.markdown("""
+    <style>
+    .storyboard-container {
+        display: flex;
+        overflow-x: auto;
+        gap: 20px;
+        padding: 10px 0;
+    }
+    .scene-column {
+        min-width: 300px;
+        flex-shrink: 0;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 15px;
+        background-color: #f9f9f9;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create storyboard columns
+    cols = st.columns(len(lines))
+    
+    for i, line in enumerate(lines):
+        with cols[i]:
+            display_scene_column(i, line)
+    
+    # Show final cartoon if assembled
+    if st.session_state.get('final_cartoon_path'):
+        st.write("---")
+        st.subheader("🎉 Final Cartoon")
+        st.video(st.session_state.final_cartoon_path)
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            with open(st.session_state.final_cartoon_path, "rb") as file:
+                st.download_button(
+                    label="📥 Download Final Cartoon",
+                    data=file.read(),
+                    file_name=os.path.basename(st.session_state.final_cartoon_path),
+                    mime="video/mp4",
+                    use_container_width=True
+                )
+        with col2:
+            if st.button("🗑️ Clear Final Cartoon", use_container_width=True):
+                st.session_state.final_cartoon_path = None
+                st.rerun()
 
-    with tabs[1]:
-        display_storyboard_tab(script_to_use)
+def display_scene_column(scene_index, line):
+    """Renders a single scene column in the storyboard."""
+    with st.container(border=True):
+        st.write(f"**Scene {scene_index + 1}**")
+        
+        # Parse the line to get character, dialogue, and duration
+        char, action, direction_override, dialogue, duration = comic_generator_module.parse_script_line(line)
+        
+        # 1. Visual Section (top)
+        st.write("**Visual:**")
+        
+        # Show scene video if generated, otherwise placeholder
+        if scene_index in st.session_state.get('generated_scene_paths', {}):
+            scene_path = st.session_state.generated_scene_paths[scene_index]
+            if scene_path and os.path.exists(scene_path):
+                st.video(scene_path)
+                if st.button("🔄 Regenerate Scene", key=f"regen_scene_{scene_index}", use_container_width=True):
+                    generate_single_scene(scene_index, line)
+            else:
+                st.image("https://via.placeholder.com/300x200?text=Scene+Not+Generated", width=250)
+                if st.button("🎬 Generate Scene", key=f"gen_scene_{scene_index}", use_container_width=True):
+                    generate_single_scene(scene_index, line)
+        else:
+            # Show character placeholder
+            if char:
+                st.write(f"Character: **{char.upper()}**")
+                if action:
+                    st.write(f"Action: *{action}*")
+                if duration:
+                    st.write(f"Duration: *{duration}s*")
+            st.image("https://via.placeholder.com/300x200?text=Click+to+Generate", width=250)
+            if st.button("🎬 Generate Scene", key=f"gen_scene_{scene_index}", use_container_width=True):
+                generate_single_scene(scene_index, line)
+        
+        # 2. Script Line Section (middle) - editable
+        st.write("**Script:**")
+        edited_line = st.text_area("", value=line, height=60, key=f"script_line_{scene_index}")
+        if edited_line != line:
+            # Update the script in session state
+            lines = st.session_state.cartoon_script.strip().split('\n')
+            lines[scene_index] = edited_line
+            st.session_state.cartoon_script = '\n'.join(lines)
+            st.rerun()
+        
+        # 3. Audio Section (bottom)
+        st.write("**Audio:**")
+        
+        # Show audio player if generated
+        if scene_index in st.session_state.get('generated_audio_paths', {}):
+            audio_path = st.session_state.generated_audio_paths[scene_index]
+            if audio_path and os.path.exists(audio_path):
+                st.audio(audio_path)
+                
+                # Show status
+                status = st.session_state.get('audio_generation_status', {}).get(scene_index, 'unknown')
+                if status == "cached":
+                    st.caption("☁️ From cache")
+                elif status == "generated":
+                    st.caption("✨ Newly generated")
+                
+                if st.button("🔄 Regenerate Audio", key=f"regen_audio_{scene_index}", use_container_width=True):
+                    regenerate_single_audio(scene_index, edited_line)
+            else:
+                st.info("Audio not found")
+                if dialogue and st.button("🎤 Generate Audio", key=f"gen_audio_{scene_index}", use_container_width=True):
+                    generate_single_audio(scene_index, edited_line)
+        else:
+            if dialogue:
+                if st.button("🎤 Generate Audio", key=f"gen_audio_{scene_index}", use_container_width=True):
+                    generate_single_audio(scene_index, edited_line)
+            else:
+                if duration:
+                    st.info(f"Silent scene ({duration}s)")
+                else:
+                    st.info("Silent scene (default duration)")
+
+# Helper functions for storyboard actions
+def generate_single_audio(scene_index, line):
+    """Generate audio for a single scene."""
+    char, _, _, dialogue, _ = comic_generator_module.parse_script_line(line)
+    if char and dialogue:
+        with st.spinner(f"Generating audio for scene {scene_index + 1}..."):
+            spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
+            path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
+            if error:
+                st.error(f"Audio failed: {error}")
+            else:
+                st.session_state.generated_audio_paths[scene_index] = path
+                st.session_state.audio_generation_status[scene_index] = status or "generated"
+                with AudioFileClip(path) as clip:
+                    st.session_state.generated_audio_durations[scene_index] = clip.duration
+                st.success(f"Audio generated for scene {scene_index + 1}!")
+                st.rerun()
+
+def regenerate_single_audio(scene_index, line):
+    """Regenerate audio for a single scene."""
+    char, _, _, dialogue, _ = comic_generator_module.parse_script_line(line)
+    if char and dialogue:
+        with st.spinner(f"Regenerating audio for scene {scene_index + 1}..."):
+            spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
+            path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue, force_regenerate=True)
+            if error:
+                st.error(f"Audio failed: {error}")
+            else:
+                st.session_state.generated_audio_paths[scene_index] = path
+                st.session_state.audio_generation_status[scene_index] = status or "generated"
+                with AudioFileClip(path) as clip:
+                    st.session_state.generated_audio_durations[scene_index] = clip.duration
+                st.success(f"Audio regenerated for scene {scene_index + 1}!")
+                st.rerun()
+
+def generate_single_scene(scene_index, line):
+    """Generate video for a single scene."""
+    with st.spinner(f"Generating scene {scene_index + 1}..."):
+        # Parse line to get custom duration if specified
+        char, _, _, dialogue, custom_duration = comic_generator_module.parse_script_line(line)
+        
+        audio_path = st.session_state.get('generated_audio_paths', {}).get(scene_index)
+        
+        # Use custom duration if specified, otherwise use audio duration or default
+        if custom_duration:
+            duration = custom_duration
+        else:
+            duration = st.session_state.get('generated_audio_durations', {}).get(scene_index, 3.0)
+        
+        scene_path, error = video_module.render_single_scene(line, scene_index, audio_path, duration)
+        if error:
+            st.error(f"Scene generation failed: {error}")
+        else:
+            st.session_state.generated_scene_paths[scene_index] = scene_path
+            st.success(f"Scene {scene_index + 1} generated!")
+            st.rerun()
+
+def generate_all_audio(lines):
+    """Generate audio for all scenes."""
+    st.session_state.final_cartoon_path = None
+    st.session_state.generated_scene_paths = {}
+    
+    with st.spinner("Generating audio for all scenes..."):
+        for i, line in enumerate(lines):
+            char, _, _, dialogue, custom_duration = comic_generator_module.parse_script_line(line)
+            if char and dialogue:
+                spoken_dialogue = re.sub(r'\(.*?\)', '', dialogue).strip()
+                path, error, status = tts_module.generate_speech_for_line(char, spoken_dialogue)
+                if error:
+                    st.error(f"Audio failed for scene {i+1}: {error}")
+                    return
+                st.session_state.generated_audio_paths[i] = path
+                st.session_state.audio_generation_status[i] = status or "generated"
+                with AudioFileClip(path) as clip:
+                    st.session_state.generated_audio_durations[i] = clip.duration
+            else:
+                st.session_state.generated_audio_paths[i] = None
+                # Use custom duration if specified, otherwise default
+                st.session_state.generated_audio_durations[i] = custom_duration or 1.5
+        
+        st.success("All audio generated!")
+        st.rerun()
+
+def generate_all_scenes(lines):
+    """Generate video for all scenes."""
+    with st.spinner("Generating all scenes..."):
+        for i, line in enumerate(lines):
+            # Parse line to get custom duration if specified
+            char, _, _, dialogue, custom_duration = comic_generator_module.parse_script_line(line)
+            
+            audio_path = st.session_state.get('generated_audio_paths', {}).get(i)
+            
+            # Use custom duration if specified, otherwise use audio duration or default
+            if custom_duration:
+                duration = custom_duration
+            else:
+                duration = st.session_state.get('generated_audio_durations', {}).get(i, 3.0)
+            
+            scene_path, error = video_module.render_single_scene(line, i, audio_path, duration)
+            if error:
+                st.error(f"Scene {i+1} generation failed: {error}")
+                return
+            st.session_state.generated_scene_paths[i] = scene_path
+        
+        st.success("All scenes generated!")
+        st.rerun()
+
+def assemble_final_cartoon_ui(lines):
+    """Assemble the final cartoon from all scenes."""
+    # Check if all scenes are generated
+    missing_scenes = []
+    for i in range(len(lines)):
+        if i not in st.session_state.get('generated_scene_paths', {}) or not st.session_state.generated_scene_paths[i]:
+            missing_scenes.append(i + 1)
+    
+    if missing_scenes:
+        st.error(f"Missing scenes: {', '.join(map(str, missing_scenes))}. Generate all scenes first.")
+        return
+    
+    # Get background audio if uploaded
+    bg_audio_path = None
+    if st.session_state.get('background_audio'):
+        import tempfile
+        temp_dir = tempfile.mkdtemp()
+        bg_audio_path = os.path.join(temp_dir, st.session_state.background_audio.name)
+        with open(bg_audio_path, "wb") as f:
+            f.write(st.session_state.background_audio.getbuffer())
+    
+    with st.spinner("Assembling final cartoon..."):
+        ordered_scene_paths = [st.session_state.generated_scene_paths[i] for i in range(len(lines))]
+        final_path, error = video_module.assemble_final_cartoon(ordered_scene_paths, bg_audio_path)
+        
+        if error:
+            st.error(f"Final assembly failed: {error}")
+        else:
+            st.session_state.final_cartoon_path = final_path
+            st.success("Final cartoon assembled!")
+            st.rerun()
 
 def display_audio_tab(script):
     """Renders the UI for the audio generation tab."""

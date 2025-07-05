@@ -65,15 +65,25 @@ def get_available_actions():
 
 def parse_script_line(line):
     """
-    Parses a single line into character, action, dialogue, and direction override.
+    Parses a single line into character, action, dialogue, direction override, and duration.
+    Returns: (character, action, direction_override, dialogue, duration)
+    
+    New format supports silent scene duration: "A: {2.5}" for 2.5 seconds silence
     """
     match = re.match(r"^\s*([A-D]):\s*(?:\((.*?)\))?\s*(.*)", line, re.IGNORECASE)
     if not match:
-        return None, "normal", None, line
+        return None, "normal", None, line, None
 
     character = match.group(1).lower()
     action_text = (match.group(2) or "normal").lower()
     dialogue = match.group(3).strip()
+
+    # Check for duration syntax in dialogue: {duration}
+    duration = None
+    duration_match = re.match(r"^\{(\d+(?:\.\d+)?)\}$", dialogue)
+    if duration_match:
+        duration = float(duration_match.group(1))
+        dialogue = ""  # Silent scene, no dialogue
 
     direction_override = None
     if action_text in ["left", "right", "straight"]:
@@ -82,7 +92,7 @@ def parse_script_line(line):
     else:
         action = action_text
 
-    return character, action, direction_override, dialogue
+    return character, action, direction_override, dialogue, duration
 
 
 def determine_logical_direction(current_char, prev_char):
