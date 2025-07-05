@@ -171,7 +171,17 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
     try:
         # --- SIMPLIFIED ASSEMBLY PROCESS ---
         # 1. Load all scene clips (which now all have audio tracks)
-        scene_clips = [VideoFileClip(path) for path in scene_paths]
+        scene_clips = []
+        for i, path in enumerate(scene_paths):
+            if not os.path.exists(path):
+                return None, f"Scene {i} file not found: {path}"
+            try:
+                clip = VideoFileClip(path)
+                if clip is None:
+                    return None, f"Scene {i} failed to load: {path}"
+                scene_clips.append(clip)
+            except Exception as e:
+                return None, f"Error loading scene {i} ({path}): {e}"
         
         # 2. Prepend the opening sequence
         if os.path.exists(OPENING_SEQUENCE_PATH):
