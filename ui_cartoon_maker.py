@@ -193,14 +193,23 @@ def display_scene_column(scene_index, line):
                 if st.button("🎬 Generate Scene", key=f"gen_scene_{scene_index}", use_container_width=True):
                     generate_single_scene(scene_index, line)
         else:
-            # Show character placeholder
+            # Show character preview image
             if char:
                 st.write(f"Character: **{char.upper()}**")
                 if action:
                     st.write(f"Action: *{action}*")
                 if duration:
                     st.write(f"Duration: *{duration}s*")
-            st.image("https://via.placeholder.com/300x200?text=Click+to+Generate", width=250)
+                
+                # Get and display the actual character image
+                preview_image_path = get_character_preview_image(char, action, direction_override)
+                if preview_image_path and os.path.exists(preview_image_path):
+                    st.image(preview_image_path, width=250, caption=f"{char.upper()} - {action}")
+                else:
+                    st.image("https://via.placeholder.com/300x200?text=Image+Not+Found", width=250)
+            else:
+                st.image("https://via.placeholder.com/300x200?text=No+Character", width=250)
+            
             if st.button("🎬 Generate Scene", key=f"gen_scene_{scene_index}", use_container_width=True):
                 generate_single_scene(scene_index, line)
         
@@ -244,6 +253,25 @@ def display_scene_column(scene_index, line):
                     st.info("Silent scene (default duration)")
 
 # Helper functions for storyboard actions
+def get_character_preview_image(char, action, direction_override=None):
+    """Get the character's base image for preview in storyboard."""
+    if not char:
+        return None
+    
+    # Determine talking state - use 'nottalking' for preview (mouth closed)
+    talking_state = "nottalking"
+    
+    # Determine direction
+    if direction_override:
+        direction = direction_override
+    else:
+        direction = comic_generator_module.determine_logical_direction(char, None)
+    
+    # Find the image path using the same logic as the comic generator
+    image_path = comic_generator_module.find_image_path(char, talking_state, direction, action)
+    
+    return image_path
+
 def generate_single_audio(scene_index, line):
     """Generate audio for a single scene."""
     char, _, _, dialogue, _ = comic_generator_module.parse_script_line(line)
