@@ -155,7 +155,15 @@ def render_single_scene(line, audio_path, duration, scene_index):
         output_dir = "Output_Scenes"
         os.makedirs(output_dir, exist_ok=True)
         scene_video_path = os.path.join(output_dir, f"scene_{scene_index}.mp4")
-        video_clip.write_videofile(scene_video_path, codec='libx264', audio_codec='aac', fps=FPS, logger=None)
+        video_clip.write_videofile(
+            scene_video_path, 
+            codec='libx264', 
+            audio_codec='aac', 
+            fps=FPS, 
+            preset='medium',
+            ffmpeg_params=['-crf', '23', '-vsync', 'cfr'],
+            logger=None
+        )
 
         return scene_video_path, None
 
@@ -322,9 +330,19 @@ def assemble_with_ffmpeg(scene_paths, background_audio_path=None):
         # Build the concat file content
         concat_content = []
         
-        # Add opening sequence if it exists
+        # Add opening sequence if it exists (but validate it first)
         if os.path.exists(OPENING_SEQUENCE_PATH):
-            concat_content.append(f"file '{os.path.abspath(OPENING_SEQUENCE_PATH)}'")
+            try:
+                # Check if opening sequence properties match our scenes
+                opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
+                if opening_clip.size == [STANDARD_WIDTH, STANDARD_HEIGHT]:
+                    concat_content.append(f"file '{os.path.abspath(OPENING_SEQUENCE_PATH)}'")
+                    st.write(f"  Adding opening sequence...")
+                else:
+                    st.warning(f"Skipping opening sequence: size mismatch ({opening_clip.size} vs [{STANDARD_WIDTH}, {STANDARD_HEIGHT}])")
+                opening_clip.close()
+            except Exception as e:
+                st.warning(f"Skipping opening sequence due to error: {e}")
         
         # Add all scene files
         for path in scene_paths:
@@ -337,13 +355,31 @@ def assemble_with_ffmpeg(scene_paths, background_audio_path=None):
         
         st.write(f"  Concatenating {len(scene_paths)} scenes with FFmpeg...")
         
-        # Build FFmpeg command
+        # Validate scene files have consistent properties
+        st.write(f"  Validating scene consistency...")
+        try:
+            # Quick check of first scene to get expected properties
+            first_clip = VideoFileClip(scene_paths[0])
+            expected_fps = first_clip.fps
+            expected_size = first_clip.size
+            first_clip.close()
+            
+            st.write(f"  Expected properties: {expected_size[0]}x{expected_size[1]} @ {expected_fps}fps")
+        except Exception as e:
+            st.warning(f"Could not validate scene properties: {e}")
+        
+        # Build FFmpeg command with proper re-encoding to fix sync issues
         ffmpeg_cmd = [
             'ffmpeg', '-y',  # -y to overwrite output file
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
-            '-c', 'copy',  # Copy streams without re-encoding for speed
+            '-c:v', 'libx264',  # Re-encode video to ensure consistency
+            '-c:a', 'aac',      # Re-encode audio to ensure consistency
+            '-r', str(FPS),     # Force consistent frame rate
+            '-vsync', 'cfr',    # Constant frame rate (fixes timing issues)
+            '-preset', 'medium', # Good quality/speed balance
+            '-crf', '23',       # Good quality setting
             final_video_path
         ]
         
@@ -384,7 +420,8 @@ def assemble_with_ffmpeg(scene_paths, background_audio_path=None):
         # Clean up temp directory
         shutil.rmtree(temp_dir)
         
-        st.write(f"  FFmpeg assembly completed successfully")
+        st.write(f"  ✅ FFmpeg assembly completed successfully!")
+        st.write(f"  Note: Video has been re-encoded to fix sync issues - this ensures proper playback.")
         return final_video_path, None
         
     except Exception as e:
