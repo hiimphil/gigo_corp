@@ -2,10 +2,10 @@
 import os
 import random
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import (ImageSequenceClip, AudioFileClip, VideoFileClip, 
                             CompositeVideoClip, concatenate_videoclips, CompositeAudioClip,
-                            concatenate_audioclips, TextClip)
+                            concatenate_audioclips)
 from moviepy.audio.AudioClip import AudioArrayClip
 from moviepy.audio.fx.all import volumex
 import comic_generator_module as cgm
@@ -38,16 +38,16 @@ CARTOON_IMAGE_BASE_PATH = "Cartoon_Images/"
 LEFT_DOT_COLOR = np.array([0, 255, 0])  # Pure Green
 RIGHT_DOT_COLOR = np.array([0, 0, 255]) # Pure Blue
 
-def create_text_overlay(dialogue, duration):
+def create_text_overlay_image(dialogue):
     """
-    Creates a text overlay clip that matches comic styling.
+    Creates a text overlay image using PIL (same as comic generator).
+    This is more reliable than MoviePy's TextClip in cloud environments.
     
     Args:
         dialogue (str): The dialogue text to display
-        duration (float): Duration of the text display
     
     Returns:
-        TextClip: MoviePy text clip ready for compositing
+        PIL.Image: Transparent image with text overlay
     """
     if not dialogue or not dialogue.strip():
         return None
@@ -58,71 +58,40 @@ def create_text_overlay(dialogue, duration):
     if not clean_dialogue:
         return None
     
+    # Create transparent image matching video dimensions
+    text_image = Image.new('RGBA', (STANDARD_WIDTH, STANDARD_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(text_image)
+    
+    # Load font with fallback (same approach as comic generator)
+    try:
+        font = ImageFont.truetype(TEXT_FONT, TEXT_FONT_SIZE)
+    except (IOError, OSError):
+        try:
+            # Try common system fonts
+            font = ImageFont.truetype("Arial.ttf", TEXT_FONT_SIZE)
+        except (IOError, OSError):
+            # Fallback to default font
+            font = ImageFont.load_default()
+            print("Warning: Using default font for text overlay")
+    
     # Wrap text to match comic layout
     wrapper = TextWrapper(width=TEXT_WRAP_WIDTH)
     lines = wrapper.wrap(text=clean_dialogue)
-    wrapped_text = '\n'.join(lines)
     
-    # Calculate text position to match comic layout
-    # In comics, text is positioned at TEXT_POSITION_Y minus the text height
-    # For video, we'll position it similarly in the lower portion of the frame
-    num_lines = len(lines)
-    line_height_estimate = TEXT_FONT_SIZE * 1.2  # Estimate line height
-    total_text_height = num_lines * line_height_estimate + (num_lines - 1) * TEXT_SPACING
+    # Calculate text positioning (same as comic generator)
+    ascent, descent = font.getmetrics()
+    line_height = ascent + descent
+    total_text_block_height = (len(lines) * line_height) + (max(0, len(lines) - 1) * TEXT_SPACING)
+    y_text = TEXT_POSITION_Y - total_text_block_height
     
-    # Position text in similar location to comic (lower portion of frame)
-    text_y_position = TEXT_POSITION_Y - total_text_height
+    # Draw each line of text
+    for line in lines:
+        line_bbox = font.getbbox(line)
+        x_text = (STANDARD_WIDTH - (line_bbox[2] - line_bbox[0])) / 2
+        draw.text((x_text, y_text), line, font=font, fill=TEXT_COLOR)
+        y_text += line_height + TEXT_SPACING
     
-    # Font fallback strategy - try custom font first, then system fonts, then default
-    fonts_to_try = [
-        TEXT_FONT,  # Custom font from comic generator
-        'Arial-Bold',  # Common system font
-        'Helvetica-Bold',  # macOS system font
-        'DejaVu-Sans-Bold',  # Linux system font
-        'Arial',  # Fallback sans-serif
-        None  # MoviePy default
-    ]
-    
-    for font_attempt in fonts_to_try:
-        try:
-            if font_attempt is None:
-                # Final fallback - no font specified
-                text_clip = TextClip(
-                    wrapped_text,
-                    fontsize=TEXT_FONT_SIZE,
-                    color=TEXT_COLOR,
-                    size=(STANDARD_WIDTH - 40, None),
-                    method='caption',
-                    align='center'
-                ).set_duration(duration).set_position(('center', text_y_position))
-            else:
-                # Try with specified font
-                text_clip = TextClip(
-                    wrapped_text,
-                    fontsize=TEXT_FONT_SIZE,
-                    font=font_attempt,
-                    color=TEXT_COLOR,
-                    size=(STANDARD_WIDTH - 40, None),
-                    method='caption',
-                    align='center'
-                ).set_duration(duration).set_position(('center', text_y_position))
-            
-            # If we got here without exception, the font worked
-            if font_attempt != TEXT_FONT:
-                print(f"Text overlay using fallback font: {font_attempt or 'default'}")
-            return text_clip
-            
-        except Exception as e:
-            if font_attempt == fonts_to_try[-1]:
-                # Last attempt failed - return error
-                print(f"Error: All font attempts failed. Last error: {e}")
-                return None
-            else:
-                # Try next font
-                print(f"Font {font_attempt} failed: {e}, trying next...")
-                continue
-    
-    return None
+    return text_image
 REFERENCE_DOT_DISTANCE = 20.0 
 
 # --- Lip-Sync Thresholds ---
@@ -234,16 +203,25 @@ def render_single_scene(line, audio_path, duration, scene_index):
         if not final_frames:
             return None, "Failed to generate any frames for the scene."
 
-        # Create the silent video clip from the frames
-        video_clip = ImageSequenceClip(final_frames, fps=FPS)
-
         # --- Add text overlay if dialogue exists ---
         char, action, direction_override, dialogue, custom_duration = cgm.parse_script_line(line)
         if dialogue:
-            text_overlay = create_text_overlay(dialogue, duration)
-            if text_overlay:
-                # Composite text over video
-                video_clip = CompositeVideoClip([video_clip, text_overlay])
+            text_overlay_image = create_text_overlay_image(dialogue)
+            if text_overlay_image:
+                # Composite text onto each frame
+                final_frames_with_text = []
+                for frame in final_frames:
+                    # Convert frame to PIL for compositing
+                    frame_pil = Image.fromarray(frame).convert('RGBA')
+                    # Composite text overlay
+                    frame_with_text = Image.alpha_composite(frame_pil, text_overlay_image)
+                    # Convert back to RGB numpy array
+                    final_frames_with_text.append(np.array(frame_with_text.convert('RGB')))
+                
+                final_frames = final_frames_with_text
+
+        # Create the video clip from the frames (with or without text)
+        video_clip = ImageSequenceClip(final_frames, fps=FPS)
 
         # --- NEW LOGIC: Attach either the real audio or silent audio ---
         if audio_path:
