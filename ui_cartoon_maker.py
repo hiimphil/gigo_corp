@@ -202,11 +202,16 @@ def display_scene_column(scene_index, line):
                     st.write(f"Duration: *{duration}s*")
                 
                 # Get and display the actual character image
-                preview_image_path = get_character_preview_image(char, action, direction_override)
-                if preview_image_path and os.path.exists(preview_image_path):
-                    st.image(preview_image_path, width=250, caption=f"{char.upper()} - {action}")
-                else:
-                    st.image("https://via.placeholder.com/300x200?text=Image+Not+Found", width=250)
+                try:
+                    preview_image_path = get_character_preview_image(char, action, direction_override)
+                    if preview_image_path and isinstance(preview_image_path, str) and os.path.exists(preview_image_path):
+                        st.image(preview_image_path, width=250, caption=f"{char.upper()} - {action}")
+                    else:
+                        st.image("https://via.placeholder.com/300x200?text=Click+to+Generate", width=250)
+                except Exception as e:
+                    st.image("https://via.placeholder.com/300x200?text=Preview+Error", width=250)
+                    # Debug info (remove later)
+                    st.caption(f"Preview error: {str(e)}")
             else:
                 st.image("https://via.placeholder.com/300x200?text=No+Character", width=250)
             
@@ -255,22 +260,35 @@ def display_scene_column(scene_index, line):
 # Helper functions for storyboard actions
 def get_character_preview_image(char, action, direction_override=None):
     """Get the character's base image for preview in storyboard."""
-    if not char:
+    try:
+        if not char:
+            return None
+        
+        # Ensure action is valid
+        if not action:
+            action = "normal"
+        
+        # Determine talking state - use 'nottalking' for preview (mouth closed)
+        talking_state = "nottalking"
+        
+        # Determine direction
+        if direction_override:
+            direction = direction_override
+        else:
+            direction = comic_generator_module.determine_logical_direction(char, None)
+        
+        # Find the image path using the same logic as the comic generator
+        image_path = comic_generator_module.find_image_path(char, talking_state, direction, action)
+        
+        # Validate the returned path
+        if image_path and isinstance(image_path, str):
+            return image_path
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"Error getting preview image for {char}: {e}")
         return None
-    
-    # Determine talking state - use 'nottalking' for preview (mouth closed)
-    talking_state = "nottalking"
-    
-    # Determine direction
-    if direction_override:
-        direction = direction_override
-    else:
-        direction = comic_generator_module.determine_logical_direction(char, None)
-    
-    # Find the image path using the same logic as the comic generator
-    image_path = comic_generator_module.find_image_path(char, talking_state, direction, action)
-    
-    return image_path
 
 def generate_single_audio(scene_index, line):
     """Generate audio for a single scene."""
