@@ -211,6 +211,3 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         return None, f"FFMPEG failed.\nSTDERR: {e.stderr}"
     except Exception as e:
         return None, f"An unexpected error occurred during final assembly: {e}"
-    finally:
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
