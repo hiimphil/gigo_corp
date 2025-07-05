@@ -220,32 +220,8 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         final_video_clip = concatenate_videoclips(scene_clips)
         st.write(f"  Concatenation successful, final duration: {final_video_clip.duration}s")
         
-        # 4. Mix in the background audio
-        final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
-        st.write(f"  Background audio path: {final_bg_audio_path}")
-        if final_bg_audio_path:
-            try:
-                st.write(f"  Loading background audio: {final_bg_audio_path}")
-                with AudioFileClip(final_bg_audio_path) as background_clip:
-                    st.write(f"  Background audio loaded, duration: {background_clip.duration}s")
-                    st.write(f"  Setting background audio duration to match video: {final_video_clip.duration}s")
-                    background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME).set_duration(final_video_clip.duration)
-                    
-                    # Check if the main clip has audio
-                    st.write(f"  Checking main clip audio: {final_video_clip.audio}")
-                    if final_video_clip.audio is None:
-                        return None, "Main video clip has no audio track"
-                    
-                    st.write(f"  Compositing audio tracks...")
-                    # Create a new composite audio clip
-                    composite_audio = CompositeAudioClip([final_video_clip.audio, background_clip])
-                    # Create a new video clip with the composite audio to avoid reference issues
-                    final_video_clip = final_video_clip.set_audio(composite_audio)
-                    st.write(f"  Audio compositing successful")
-            except Exception as e:
-                return None, f"Failed to mix background audio: {e}"
-        else:
-            st.write(f"  No background audio to mix")
+        # 4. TEMPORARILY SKIP background audio mixing to test
+        st.write(f"  TEMPORARILY SKIPPING background audio mixing to debug the issue")
 
         # 5. Write the final file
         output_dir = "Output_Cartoons"
