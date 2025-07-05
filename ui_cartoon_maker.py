@@ -209,6 +209,11 @@ def display_scene_column(scene_index, line):
                     st.caption(f"Debug: char={char}, action={action}, path={preview_image_path}")
                     if preview_image_path:
                         st.caption(f"Path exists: {os.path.exists(preview_image_path) if isinstance(preview_image_path, str) else 'Not a string'}")
+                    else:
+                        # Show what directory it's looking for
+                        expected_dir = f"Images/{char}/nottalking/{comic_generator_module.determine_logical_direction(char, None)}/{action}"
+                        st.caption(f"Expected directory: {expected_dir}")
+                        st.caption(f"Directory exists: {os.path.exists(expected_dir)}")
                     
                     if preview_image_path and isinstance(preview_image_path, str) and os.path.exists(preview_image_path):
                         st.image(preview_image_path, width=250, caption=f"{char.upper()} - {action}")
@@ -284,12 +289,13 @@ def get_character_preview_image(char, action, direction_override=None):
             direction = comic_generator_module.determine_logical_direction(char, None)
         
         # Find the image path using the same logic as the comic generator
-        image_path = comic_generator_module.find_image_path(char, talking_state, direction, action)
+        image_path, error = comic_generator_module.find_image_path(char, talking_state, direction, action)
         
         # Validate the returned path
         if image_path and isinstance(image_path, str):
             return image_path
         else:
+            print(f"No image found for {char}/{talking_state}/{direction}/{action}: {error}")
             return None
             
     except Exception as e:
