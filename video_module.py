@@ -237,7 +237,10 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
                         return None, "Main video clip has no audio track"
                     
                     st.write(f"  Compositing audio tracks...")
-                    final_video_clip.audio = CompositeAudioClip([final_video_clip.audio, background_clip])
+                    # Create a new composite audio clip
+                    composite_audio = CompositeAudioClip([final_video_clip.audio, background_clip])
+                    # Create a new video clip with the composite audio to avoid reference issues
+                    final_video_clip = final_video_clip.set_audio(composite_audio)
                     st.write(f"  Audio compositing successful")
             except Exception as e:
                 return None, f"Failed to mix background audio: {e}"
@@ -250,6 +253,12 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         timestamp = random.randint(1000, 9999)
         final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
 
+        # Validate final clip before writing
+        if final_video_clip is None:
+            return None, "Final video clip is None"
+        if not hasattr(final_video_clip, 'get_frame'):
+            return None, "Final video clip has no get_frame method"
+        
         st.write(f"  Writing final video to: {final_video_path}")
         final_video_clip.write_videofile(
             final_video_path, codec='libx264', audio_codec='aac',
