@@ -126,49 +126,30 @@ def display_horizontal_storyboard(lines):
     
     st.write("---")
     
-    # Create horizontal scrolling storyboard
-    st.markdown("""
-    <style>
-    .horizontal-scroll-container {
-        overflow-x: auto;
-        white-space: nowrap;
-        padding: 10px 0;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        background-color: #f8f9fa;
-    }
+    # Create storyboard using native Streamlit layout
+    # Show 2 scenes per row for better readability
+    scenes_per_row = 2
     
-    .scene-wrapper {
-        display: inline-block;
-        vertical-align: top;
-        white-space: normal;
-        width: 320px;
-        margin: 10px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        background-color: white;
-        padding: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    /* Ensure Streamlit components work inside our custom containers */
-    .scene-wrapper > div {
-        width: 100% !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Start horizontal container
-    st.markdown('<div class="horizontal-scroll-container">', unsafe_allow_html=True)
-    
-    # Create scene columns inside the horizontal container
-    for i, line in enumerate(lines):
-        st.markdown(f'<div class="scene-wrapper">', unsafe_allow_html=True)
-        display_scene_column(i, line)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # End horizontal container
-    st.markdown('</div>', unsafe_allow_html=True)
+    for row_start in range(0, len(lines), scenes_per_row):
+        row_end = min(row_start + scenes_per_row, len(lines))
+        row_lines = lines[row_start:row_end]
+        
+        if len(row_lines) == 1:
+            # Single column for one scene - center it
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                display_scene_column(row_start, row_lines[0])
+        else:
+            # Multiple columns for this row
+            cols = st.columns(len(row_lines))
+            for i, line in enumerate(row_lines):
+                scene_index = row_start + i
+                with cols[i]:
+                    display_scene_column(scene_index, line)
+        
+        # Add spacing between rows (only if not the last row)
+        if row_end < len(lines):
+            st.markdown("<br>", unsafe_allow_html=True)
     
     # Show final cartoon if assembled
     if st.session_state.get('final_cartoon_path'):
