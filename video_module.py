@@ -248,9 +248,37 @@ def render_single_scene(line, audio_path, duration, scene_index):
 
         return scene_video_path, None
 
+    except Exception as e:
+        return None, f"Unexpected error in scene generation: {e}"
     finally:
+        # Clean up temporary directory
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+        
+        # Clean up local variables to free memory
+        if 'final_frames' in locals():
+            del final_frames
+        if 'final_frames_with_text' in locals():
+            del final_frames_with_text
+        if 'video_clip' in locals():
+            try:
+                video_clip.close()
+            except:
+                pass
+        if 'dialogue_clip' in locals():
+            try:
+                dialogue_clip.close()
+            except:
+                pass
+        if 'silent_audio' in locals():
+            try:
+                silent_audio.close()
+            except:
+                pass
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
 
 # --- NEW: Final Assembly Function ---
 def assemble_final_cartoon(scene_paths, background_audio_path=None):

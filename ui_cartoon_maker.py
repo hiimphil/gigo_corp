@@ -391,9 +391,24 @@ def generate_all_audio(lines):
         st.rerun()
 
 def generate_all_scenes(lines):
-    """Generate video for all scenes."""
-    with st.spinner("Generating all scenes..."):
+    """Generate video for all scenes sequentially with progress tracking."""
+    import gc
+    import time
+    
+    # Create a progress container
+    progress_container = st.container()
+    
+    with progress_container:
+        st.write("🎬 **Generating All Scenes**")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
         for i, line in enumerate(lines):
+            # Update progress
+            progress = (i) / len(lines)
+            progress_bar.progress(progress)
+            status_text.write(f"Processing scene {i+1} of {len(lines)}...")
+            
             # Parse line to get custom duration if specified
             char, _, _, dialogue, custom_duration = comic_generator_module.parse_script_line(line)
             
@@ -405,11 +420,31 @@ def generate_all_scenes(lines):
             else:
                 duration = st.session_state.get('generated_audio_durations', {}).get(i, 3.0)
             
+            # Generate the scene
             scene_path, error = video_module.render_single_scene(line, audio_path, duration, i)
             if error:
                 st.error(f"Scene {i+1} generation failed: {error}")
+                progress_bar.empty()
+                status_text.empty()
                 return
+            
+            # Store the result
             st.session_state.generated_scene_paths[i] = scene_path
+            
+            # Force garbage collection to free memory between scenes
+            gc.collect()
+            
+            # Brief pause to allow UI to update and memory to clear
+            time.sleep(0.1)
+        
+        # Final progress update
+        progress_bar.progress(1.0)
+        status_text.write("✅ All scenes generated successfully!")
+        
+        # Clean up progress indicators after a moment
+        time.sleep(1)
+        progress_bar.empty()
+        status_text.empty()
         
         st.success("All scenes generated!")
         st.rerun()
