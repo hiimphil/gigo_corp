@@ -222,18 +222,27 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         
         # 4. Mix in the background audio
         final_bg_audio_path = background_audio_path or (DEFAULT_BG_AUDIO_PATH if os.path.exists(DEFAULT_BG_AUDIO_PATH) else None)
+        st.write(f"  Background audio path: {final_bg_audio_path}")
         if final_bg_audio_path:
             try:
+                st.write(f"  Loading background audio: {final_bg_audio_path}")
                 with AudioFileClip(final_bg_audio_path) as background_clip:
+                    st.write(f"  Background audio loaded, duration: {background_clip.duration}s")
+                    st.write(f"  Setting background audio duration to match video: {final_video_clip.duration}s")
                     background_clip = background_clip.fx(volumex, BACKGROUND_AUDIO_VOLUME).set_duration(final_video_clip.duration)
                     
                     # Check if the main clip has audio
+                    st.write(f"  Checking main clip audio: {final_video_clip.audio}")
                     if final_video_clip.audio is None:
                         return None, "Main video clip has no audio track"
                     
+                    st.write(f"  Compositing audio tracks...")
                     final_video_clip.audio = CompositeAudioClip([final_video_clip.audio, background_clip])
+                    st.write(f"  Audio compositing successful")
             except Exception as e:
                 return None, f"Failed to mix background audio: {e}"
+        else:
+            st.write(f"  No background audio to mix")
 
         # 5. Write the final file
         output_dir = "Output_Cartoons"
@@ -241,10 +250,12 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         timestamp = random.randint(1000, 9999)
         final_video_path = os.path.join(output_dir, f"gigoco_cartoon_{timestamp}.mp4")
 
+        st.write(f"  Writing final video to: {final_video_path}")
         final_video_clip.write_videofile(
             final_video_path, codec='libx264', audio_codec='aac',
             temp_audiofile='temp-audio.m4a', remove_temp=True, fps=FPS, logger=None
         )
+        st.write(f"  Final video written successfully")
         return final_video_path, None
 
     except subprocess.CalledProcessError as e:
