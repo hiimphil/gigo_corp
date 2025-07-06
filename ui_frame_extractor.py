@@ -8,8 +8,14 @@ import numpy as np
 import zipfile
 import io
 
-def extract_frames_from_video(video_path, output_dir, frame_prefix="base"):
-    """Extract all frames from video and save as PNG files."""
+def calculate_frame_hash(frame_array):
+    """Calculate a simple hash for frame comparison."""
+    # Resize to small size for faster comparison
+    small_frame = Image.fromarray(frame_array).resize((32, 32))
+    return hash(small_frame.tobytes())
+
+def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remove_duplicates=True, similarity_threshold=0.95):
+    """Extract frames from video and save as PNG files, optionally removing duplicates."""
     try:
         with VideoFileClip(video_path) as video:
             duration = video.duration
@@ -23,6 +29,9 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base"):
             status_text = st.empty()
             
             extracted_files = []
+            frame_hashes = []
+            previous_frame = None
+            duplicates_removed = 0
             
             for i in range(total_frames):
                 frame_time = i / fps
@@ -31,21 +40,59 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base"):
                 # Convert to PIL Image
                 frame_image = Image.fromarray(frame.astype('uint8'))
                 
-                # Generate filename with zero-padded numbers
-                frame_filename = f"{frame_prefix}_{i+1:02d}.png"
-                frame_path = os.path.join(output_dir, frame_filename)
+                should_save = True
                 
-                # Save frame
-                frame_image.save(frame_path, "PNG")
-                extracted_files.append(frame_path)
+                if remove_duplicates and previous_frame is not None:
+                    # Calculate frame hash for quick duplicate detection
+                    current_hash = calculate_frame_hash(frame)
+                    
+                    # Check if this frame is very similar to the previous one
+                    if current_hash in frame_hashes:
+                        should_save = False
+                        duplicates_removed += 1
+                    else:
+                        # For more accurate comparison, use pixel difference
+                        prev_array = np.array(previous_frame.resize((64, 64)))
+                        curr_array = np.array(frame_image.resize((64, 64)))
+                        
+                        # Calculate similarity (0 = identical, 1 = completely different)
+                        diff = np.mean(np.abs(prev_array.astype(float) - curr_array.astype(float))) / 255.0
+                        similarity = 1.0 - diff
+                        
+                        if similarity > similarity_threshold:
+                            should_save = False
+                            duplicates_removed += 1
+                        else:
+                            frame_hashes.append(current_hash)
+                
+                if should_save:
+                    # Generate filename with sequential numbering for unique frames
+                    unique_frame_number = len(extracted_files) + 1
+                    frame_filename = f"{frame_prefix}_{unique_frame_number:02d}.png"
+                    frame_path = os.path.join(output_dir, frame_filename)
+                    
+                    # Save frame
+                    frame_image.save(frame_path, "PNG")
+                    extracted_files.append(frame_path)
+                    previous_frame = frame_image
+                    
+                    if not remove_duplicates:
+                        frame_hashes.append(calculate_frame_hash(frame))
                 
                 # Update progress
                 progress = (i + 1) / total_frames
                 progress_bar.progress(progress)
-                status_text.write(f"Extracting frame {i+1}/{total_frames}: {frame_filename}")
+                
+                if remove_duplicates:
+                    status_text.write(f"Processing frame {i+1}/{total_frames} | Unique: {len(extracted_files)} | Duplicates removed: {duplicates_removed}")
+                else:
+                    status_text.write(f"Extracting frame {i+1}/{total_frames}")
             
             progress_bar.empty()
             status_text.empty()
+            
+            if remove_duplicates and duplicates_removed > 0:
+                st.info(f"🔄 Removed {duplicates_removed} duplicate frames. Saved {len(extracted_files)} unique frames.")
             
             return extracted_files, None
             
@@ -97,7 +144,7 @@ def display():
         st.video(uploaded_file)
         
         # Configuration options
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             frame_prefix = st.text_input(
@@ -107,6 +154,18 @@ def display():
             )
         
         with col2:
+            st.write("**Duplicate Removal:**")
+            remove_duplicates = st.checkbox("Remove duplicate frames", value=True, help="Skip nearly identical consecutive frames")
+            if remove_duplicates:
+                similarity_threshold = st.slider(
+                    "Similarity threshold", 
+                    0.85, 0.99, 0.95, 0.01,
+                    help="Higher = more aggressive duplicate removal"
+                )
+            else:
+                similarity_threshold = 0.95
+        
+        with col3:
             st.write("**Preview Settings:**")
             show_preview = st.checkbox("Show frame previews", value=True)
             max_preview_frames = st.slider("Max preview frames", 1, 20, 6)
@@ -130,7 +189,9 @@ def display():
                     extracted_files, error = extract_frames_from_video(
                         temp_video_path, 
                         temp_output_dir, 
-                        frame_prefix
+                        frame_prefix,
+                        remove_duplicates,
+                        similarity_threshold
                     )
                 
                 if error:
@@ -216,6 +277,7 @@ def display():
         - Use consistent character positioning
         - Ensure mouth area is clearly visible
         - Higher FPS = more frames = smoother motion
+        - **Duplicate removal** helps eliminate static sections
         """)
     
     with col2:
