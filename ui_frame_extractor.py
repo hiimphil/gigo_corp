@@ -14,8 +14,8 @@ def calculate_frame_hash(frame_array):
     small_frame = Image.fromarray(frame_array).resize((32, 32))
     return hash(small_frame.tobytes())
 
-def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remove_duplicates=True, similarity_threshold=0.95):
-    """Extract frames from video and save as PNG files, optionally removing duplicates."""
+def extract_and_analyze_frames(video_path, output_dir, frame_prefix="base"):
+    """Extract ALL frames and calculate similarity scores for analysis."""
     try:
         with VideoFileClip(video_path) as video:
             duration = video.duration
@@ -23,83 +23,140 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
             total_frames = int(duration * fps)
             
             st.write(f"📹 Video info: {duration:.2f}s, {fps} FPS, {total_frames} frames")
-            st.write(f"🎛️ Duplicate removal: {'Enabled' if remove_duplicates else 'Disabled'}")
-            if remove_duplicates:
-                st.write(f"🎯 Similarity threshold: {similarity_threshold:.2f} (lower = less aggressive)")
+            st.write("📊 Extracting all frames and analyzing similarities...")
             
             # Progress tracking
             progress_bar = st.progress(0)
             status_text = st.empty()
-            debug_text = st.empty()
             
-            extracted_files = []
-            previous_frame_array = None
-            duplicates_removed = 0
+            all_frames = []
+            similarity_scores = []
             
+            # Step 1: Extract all frames
             for i in range(total_frames):
                 frame_time = i / fps
                 frame = video.get_frame(frame_time)
                 
-                # Convert to PIL Image
+                # Convert to PIL Image and save
                 frame_image = Image.fromarray(frame.astype('uint8'))
-                current_frame_array = np.array(frame_image)
+                frame_filename = f"{frame_prefix}_{i+1:03d}.png"  # Use 3-digit numbering for sorting
+                frame_path = os.path.join(output_dir, frame_filename)
                 
-                should_save = True
-                similarity_score = 0.0
-                
-                if remove_duplicates and previous_frame_array is not None:
-                    # Resize both frames for comparison (faster and more reliable)
-                    prev_small = Image.fromarray(previous_frame_array).resize((32, 32))
-                    curr_small = frame_image.resize((32, 32))
-                    
-                    prev_array = np.array(prev_small, dtype=float)
-                    curr_array = np.array(curr_small, dtype=float)
-                    
-                    # Calculate mean absolute difference
-                    diff = np.mean(np.abs(prev_array - curr_array)) / 255.0
-                    similarity_score = 1.0 - diff  # Convert to similarity (1.0 = identical, 0.0 = completely different)
-                    
-                    if similarity_score > similarity_threshold:
-                        should_save = False
-                        duplicates_removed += 1
-                
-                if should_save:
-                    # Always save the first frame
-                    unique_frame_number = len(extracted_files) + 1
-                    frame_filename = f"{frame_prefix}_{unique_frame_number:02d}.png"
-                    frame_path = os.path.join(output_dir, frame_filename)
-                    
-                    # Save frame
-                    frame_image.save(frame_path, "PNG")
-                    extracted_files.append(frame_path)
-                    
-                    # Update previous frame for next comparison
-                    previous_frame_array = current_frame_array
+                frame_image.save(frame_path, "PNG")
+                all_frames.append({
+                    'path': frame_path,
+                    'filename': frame_filename,
+                    'frame_number': i + 1,
+                    'time': frame_time,
+                    'image_array': np.array(frame_image)
+                })
                 
                 # Update progress
                 progress = (i + 1) / total_frames
-                progress_bar.progress(progress)
+                progress_bar.progress(progress * 0.7)  # First 70% for extraction
+                status_text.write(f"Extracting frame {i+1}/{total_frames}")
+            
+            # Step 2: Calculate similarity scores
+            st.write("🧮 Calculating similarity scores between consecutive frames...")
+            
+            for i in range(1, len(all_frames)):
+                # Compare current frame with previous frame
+                prev_frame = all_frames[i-1]['image_array']
+                curr_frame = all_frames[i]['image_array']
                 
-                if remove_duplicates:
-                    status_text.write(f"Processing frame {i+1}/{total_frames} | Unique: {len(extracted_files)} | Duplicates: {duplicates_removed}")
-                    if i > 0:  # Show similarity for debugging
-                        debug_text.write(f"Frame {i+1} similarity to previous: {similarity_score:.3f} ({'SAVED' if should_save else 'SKIPPED'})")
-                else:
-                    status_text.write(f"Extracting frame {i+1}/{total_frames}")
+                # Resize for faster comparison
+                prev_small = Image.fromarray(prev_frame).resize((32, 32))
+                curr_small = Image.fromarray(curr_frame).resize((32, 32))
+                
+                prev_array = np.array(prev_small, dtype=float)
+                curr_array = np.array(curr_small, dtype=float)
+                
+                # Calculate similarity
+                diff = np.mean(np.abs(prev_array - curr_array)) / 255.0
+                similarity = 1.0 - diff
+                
+                similarity_scores.append({
+                    'frame_number': i + 1,
+                    'similarity_to_previous': similarity,
+                    'frame_data': all_frames[i]
+                })
+                
+                # Update progress
+                progress = 0.7 + (i / len(all_frames)) * 0.3  # Last 30% for similarity calculation
+                progress_bar.progress(progress)
+                status_text.write(f"Analyzing similarities {i}/{len(all_frames)-1}")
             
             progress_bar.empty()
             status_text.empty()
-            debug_text.empty()
             
-            if remove_duplicates and duplicates_removed > 0:
-                st.info(f"🔄 Removed {duplicates_removed} duplicate frames. Saved {len(extracted_files)} unique frames.")
-            elif remove_duplicates:
-                st.success(f"✨ No duplicates found! Saved all {len(extracted_files)} frames.")
+            # Calculate statistics
+            similarities = [s['similarity_to_previous'] for s in similarity_scores]
+            min_sim = min(similarities) if similarities else 0
+            max_sim = max(similarities) if similarities else 0
+            avg_sim = sum(similarities) / len(similarities) if similarities else 0
             
-            return extracted_files, None
+            st.success(f"✅ Analysis complete! {total_frames} frames extracted.")
+            st.write(f"📈 Similarity range: {min_sim:.4f} to {max_sim:.4f} (avg: {avg_sim:.4f})")
+            
+            return {
+                'all_frames': all_frames,
+                'similarity_scores': similarity_scores,
+                'stats': {
+                    'total_frames': total_frames,
+                    'min_similarity': min_sim,
+                    'max_similarity': max_sim,
+                    'avg_similarity': avg_sim
+                }
+            }, None
             
     except Exception as e:
         return None, f"Error extracting frames: {str(e)}"
+
+def filter_frames_by_criteria(analysis_data, similarity_threshold=None, target_frame_count=None):
+    """Filter frames based on similarity threshold or target count."""
+    if not analysis_data:
+        return [], {}
+    
+    all_frames = analysis_data['all_frames']
+    similarity_scores = analysis_data['similarity_scores']
+    
+    # Always include the first frame
+    filtered_frames = [all_frames[0]['path']]
+    kept_frames_info = [{'frame_number': 1, 'similarity': 0.0, 'reason': 'First frame'}]
+    
+    if target_frame_count:
+        # Sort by lowest similarity (most different from previous frame)
+        sorted_scores = sorted(similarity_scores, key=lambda x: x['similarity_to_previous'])
+        frames_to_keep = min(target_frame_count - 1, len(sorted_scores))  # -1 because we already have first frame
+        
+        selected_scores = sorted_scores[:frames_to_keep]
+        # Sort back by frame number to maintain sequence
+        selected_scores.sort(key=lambda x: x['frame_number'])
+        
+        for score_data in selected_scores:
+            filtered_frames.append(score_data['frame_data']['path'])
+            kept_frames_info.append({
+                'frame_number': score_data['frame_number'],
+                'similarity': score_data['similarity_to_previous'],
+                'reason': f'Top {frames_to_keep} most different'
+            })
+    
+    elif similarity_threshold is not None:
+        # Keep frames below similarity threshold
+        for score_data in similarity_scores:
+            if score_data['similarity_to_previous'] < similarity_threshold:
+                filtered_frames.append(score_data['frame_data']['path'])
+                kept_frames_info.append({
+                    'frame_number': score_data['frame_number'],
+                    'similarity': score_data['similarity_to_previous'],
+                    'reason': f'Below threshold {similarity_threshold:.4f}'
+                })
+    
+    return filtered_frames, {
+        'kept_count': len(filtered_frames),
+        'total_count': len(all_frames),
+        'frames_info': kept_frames_info
+    }
 
 def create_download_zip(file_paths):
     """Create a ZIP file containing all extracted frames."""
@@ -146,37 +203,16 @@ def display():
         st.video(uploaded_file)
         
         # Configuration options
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            frame_prefix = st.text_input(
-                "Frame filename prefix",
-                value="base",
-                help="Frames will be named: prefix_01.png, prefix_02.png, etc."
-            )
-        
-        with col2:
-            st.write("**Duplicate Removal:**")
-            remove_duplicates = st.checkbox("Remove duplicate frames", value=True, help="Skip nearly identical consecutive frames")
-            if remove_duplicates:
-                similarity_threshold = st.slider(
-                    "Similarity threshold", 
-                    0.8500, 0.9999, 0.9950, 0.0001,
-                    help="Higher = more aggressive removal. Try 0.9950 for subtle motion, 0.9990+ for very similar frames.",
-                    format="%.4f"
-                )
-            else:
-                similarity_threshold = 0.9950
-        
-        with col3:
-            st.write("**Preview Settings:**")
-            show_preview = st.checkbox("Show frame previews", value=True)
-            max_preview_frames = st.slider("Max preview frames", 1, 20, 6)
+        frame_prefix = st.text_input(
+            "Frame filename prefix",
+            value="base",
+            help="Frames will be named: prefix_001.png, prefix_002.png, etc."
+        )
         
         st.divider()
         
-        # Extract frames button
-        if st.button("🎬 Extract Frames", use_container_width=True, type="primary"):
+        # Step 1: Extract and Analyze
+        if st.button("🎬 Extract & Analyze Video", use_container_width=True, type="primary"):
             
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
@@ -187,85 +223,158 @@ def display():
             temp_output_dir = tempfile.mkdtemp()
             
             try:
-                # Extract frames
-                with st.spinner("Extracting frames from video..."):
-                    extracted_files, error = extract_frames_from_video(
-                        temp_video_path, 
-                        temp_output_dir, 
-                        frame_prefix,
-                        remove_duplicates,
-                        similarity_threshold
-                    )
+                # Extract and analyze all frames
+                analysis_data, error = extract_and_analyze_frames(
+                    temp_video_path, 
+                    temp_output_dir, 
+                    frame_prefix
+                )
                 
                 if error:
                     st.error(f"❌ Extraction failed: {error}")
                 else:
-                    st.success(f"✅ Successfully extracted {len(extracted_files)} frames!")
-                    
-                    # Show preview grid
-                    if show_preview and extracted_files:
-                        st.subheader("🖼️ Frame Preview")
-                        
-                        # Show subset of frames for preview
-                        preview_files = extracted_files[:max_preview_frames]
-                        cols = st.columns(min(len(preview_files), 4))
-                        
-                        for i, file_path in enumerate(preview_files):
-                            with cols[i % len(cols)]:
-                                st.image(file_path, caption=os.path.basename(file_path), width=150)
-                        
-                        if len(extracted_files) > max_preview_frames:
-                            st.info(f"Showing {max_preview_frames} of {len(extracted_files)} frames")
-                    
-                    # Create download
-                    st.subheader("📥 Download Frames")
-                    
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        with st.spinner("Creating ZIP file..."):
-                            zip_data = create_download_zip(extracted_files)
-                        
-                        st.download_button(
-                            label=f"📥 Download All Frames ({len(extracted_files)} files)",
-                            data=zip_data,
-                            file_name=f"{frame_prefix}_frames.zip",
-                            mime="application/zip",
-                            use_container_width=True
-                        )
-                    
-                    with col2:
-                        st.metric("Total Frames", len(extracted_files))
-                        st.metric("ZIP Size", f"{len(zip_data) / 1024 / 1024:.1f} MB")
-                    
-                    # Instructions
-                    st.subheader("📝 Next Steps")
-                    st.markdown(f"""
-                    **To use these frames in your cartoon maker:**
-                    
-                    1. **Download and extract** the ZIP file
-                    2. **Edit each frame** to:
-                       - Remove the mouth area (make it transparent or match background)
-                       - Add **green tracking dot** (left mouth corner)
-                       - Add **blue tracking dot** (right mouth corner)
-                    3. **Upload to your project** at:
-                       ```
-                       Cartoon_Images/[character]/[direction]/[action]/
-                       ├── {frame_prefix}_01.png
-                       ├── {frame_prefix}_02.png
-                       └── ...
-                       ```
-                    4. **Test in cartoon maker** - the system will automatically detect and use the motion sequence!
-                    """)
+                    # Store analysis data in session state
+                    st.session_state.frame_analysis = analysis_data
+                    st.session_state.temp_frame_dir = temp_output_dir
+                    st.session_state.frame_prefix = frame_prefix
+                    st.rerun()
                 
-            finally:
-                # Clean up temporary files
+            except Exception as e:
+                st.error(f"❌ Unexpected error: {e}")
                 try:
                     os.unlink(temp_video_path)
                     import shutil
                     shutil.rmtree(temp_output_dir)
                 except:
                     pass
+        
+        # Step 2: Filter and Download (show only if analysis is complete)
+        if 'frame_analysis' in st.session_state and st.session_state.frame_analysis:
+            st.divider()
+            st.subheader("📊 Frame Analysis Results")
+            
+            analysis = st.session_state.frame_analysis
+            stats = analysis['stats']
+            
+            # Show analysis stats
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Frames", stats['total_frames'])
+            with col2:
+                st.metric("Min Similarity", f"{stats['min_similarity']:.4f}")
+            with col3:
+                st.metric("Max Similarity", f"{stats['max_similarity']:.4f}")
+            with col4:
+                st.metric("Avg Similarity", f"{stats['avg_similarity']:.4f}")
+            
+            st.subheader("🎛️ Choose Filtering Method")
+            
+            filter_method = st.radio(
+                "How would you like to filter frames?",
+                ["Target frame count", "Similarity threshold"],
+                help="Choose frames by count (easier) or by similarity score (more precise)"
+            )
+            
+            col1, col2 = st.columns(2)
+            
+            if filter_method == "Target frame count":
+                with col1:
+                    target_count = st.slider(
+                        "How many frames do you want?", 
+                        2, min(50, stats['total_frames']), 
+                        min(20, stats['total_frames'] // 5),
+                        help="Pick the most different frames to keep motion variety"
+                    )
+                    
+                    if st.button("📊 Preview Frame Selection", use_container_width=True):
+                        filtered_frames, filter_info = filter_frames_by_criteria(
+                            analysis, target_frame_count=target_count
+                        )
+                        st.session_state.filtered_frames = filtered_frames
+                        st.session_state.filter_info = filter_info
+                        st.rerun()
+                        
+            else:  # Similarity threshold
+                with col1:
+                    # Use actual data range for better slider
+                    threshold = st.slider(
+                        "Similarity threshold", 
+                        stats['min_similarity'], stats['max_similarity'], 
+                        stats['avg_similarity'], 0.0001,
+                        help="Keep frames BELOW this similarity (lower = more frames kept)",
+                        format="%.4f"
+                    )
+                    
+                    if st.button("📊 Preview Frame Selection", use_container_width=True):
+                        filtered_frames, filter_info = filter_frames_by_criteria(
+                            analysis, similarity_threshold=threshold
+                        )
+                        st.session_state.filtered_frames = filtered_frames
+                        st.session_state.filter_info = filter_info
+                        st.rerun()
+            
+            # Show filtering results
+            if 'filter_info' in st.session_state and st.session_state.filter_info:
+                with col2:
+                    filter_info = st.session_state.filter_info
+                    st.write("**Filter Results:**")
+                    st.metric("Frames Selected", f"{filter_info['kept_count']}/{filter_info['total_count']}")
+                    
+                    reduction = (1 - filter_info['kept_count'] / filter_info['total_count']) * 100
+                    st.metric("Reduction", f"{reduction:.1f}%")
+                
+                # Show preview grid
+                if 'filtered_frames' in st.session_state:
+                    st.subheader("🖼️ Selected Frames Preview")
+                    
+                    preview_frames = st.session_state.filtered_frames[:12]  # Show first 12
+                    cols = st.columns(4)
+                    
+                    for i, file_path in enumerate(preview_frames):
+                        with cols[i % 4]:
+                            st.image(file_path, caption=os.path.basename(file_path), width=150)
+                    
+                    if len(st.session_state.filtered_frames) > 12:
+                        st.info(f"Showing 12 of {len(st.session_state.filtered_frames)} selected frames")
+                    
+                    # Download button
+                    st.subheader("📥 Download Selected Frames")
+                    
+                    if st.button("📥 Create Download ZIP", use_container_width=True, type="primary"):
+                        with st.spinner("Creating ZIP file..."):
+                            zip_data = create_download_zip(st.session_state.filtered_frames)
+                        
+                        st.download_button(
+                            label=f"📥 Download {len(st.session_state.filtered_frames)} Selected Frames",
+                            data=zip_data,
+                            file_name=f"{st.session_state.frame_prefix}_filtered_frames.zip",
+                            mime="application/zip",
+                            use_container_width=True
+                        )
+                        
+                        st.success("✅ ZIP file ready for download!")
+        
+        # Instructions
+        if 'frame_analysis' in st.session_state:
+            st.divider()
+            st.subheader("📝 Next Steps")
+            st.markdown(f"""
+            **To use these frames in your cartoon maker:**
+            
+            1. **Download** the filtered frames ZIP
+            2. **Edit each frame** to:
+               - Remove the mouth area (make it transparent or match background)
+               - Add **green tracking dot** (left mouth corner)
+               - Add **blue tracking dot** (right mouth corner)
+            3. **Rename and upload** to your project at:
+               ```
+               Cartoon_Images/[character]/[direction]/[action]/
+               ├── base_01.png
+               ├── base_02.png
+               └── ...
+               ```
+            4. **Test in cartoon maker** - the system will automatically detect and use the motion sequence!
+            """)
     
     # Additional help
     st.divider()
