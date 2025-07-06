@@ -66,21 +66,91 @@ def display():
             )
         
         with col2:
-            st.write("**Preview Settings:**")
+            st.write("**Detection Method:**")
+            
+            detection_method = st.radio(
+                "How to locate the face?",
+                ["Manual click positioning", "Automatic estimation"],
+                help="Manual click is much more accurate!"
+            )
             
             # Number of preview frames to show
             preview_frames = st.slider(
                 "Preview frames to show", 
-                1, 10, 4,
+                1, 8, 3,
                 help="How many processed frames to preview"
             )
+        
+        # Manual positioning section
+        if detection_method == "Manual click positioning":
+            st.divider()
+            st.subheader("🎯 Click to Position Face")
             
-            # Detection sensitivity
-            detection_confidence = st.slider(
-                "Detection confidence", 
-                0.3, 0.9, 0.5, 0.1,
-                help="Higher = more strict face detection"
-            )
+            # Load first frame for positioning
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
+                tmp_video.write(uploaded_file.getbuffer())
+                temp_video_path = tmp_video.name
+            
+            try:
+                from moviepy.editor import VideoFileClip
+                with VideoFileClip(temp_video_path) as video:
+                    # Get middle frame for positioning
+                    mid_time = video.duration / 2
+                    frame = video.get_frame(mid_time)
+                    positioning_frame = Image.fromarray(frame.astype('uint8'))
+                
+                st.write("**Click on the character's face center in this frame:**")
+                
+                # Convert to bytes for click detection
+                img_buffer = io.BytesIO()
+                positioning_frame.save(img_buffer, format='PNG')
+                img_bytes = img_buffer.getvalue()
+                
+                # Use click coordinates for positioning
+                try:
+                    from streamlit_image_coordinates import streamlit_image_coordinates
+                    
+                    clicked_coords = streamlit_image_coordinates(
+                        img_bytes,
+                        key="face_position_click",
+                        width=min(positioning_frame.width, 600)
+                    )
+                    
+                    face_center = None
+                    if clicked_coords is not None:
+                        # Calculate scale factor if image was resized
+                        display_width = min(positioning_frame.width, 600)
+                        scale_factor = positioning_frame.width / display_width
+                        
+                        face_x = int(clicked_coords["x"] * scale_factor)
+                        face_y = int(clicked_coords["y"] * scale_factor)
+                        face_center = (face_x, face_y)
+                        
+                        st.success(f"✅ Face positioned at ({face_x}, {face_y})")
+                        
+                        # Store in session state
+                        st.session_state.manual_face_center = face_center
+                    
+                    # Show current position if exists
+                    if 'manual_face_center' in st.session_state:
+                        face_center = st.session_state.manual_face_center
+                        st.info(f"Current face center: {face_center}")
+                    else:
+                        st.warning("👆 Click on the character's face to set position")
+                
+                except ImportError:
+                    st.error("Click positioning requires streamlit-image-coordinates package")
+                    detection_method = "Automatic estimation"
+                
+            except Exception as e:
+                st.error(f"Could not load video frame: {e}")
+                detection_method = "Automatic estimation"
+            
+            finally:
+                try:
+                    os.unlink(temp_video_path)
+                except:
+                    pass
         
         st.divider()
         
@@ -102,11 +172,17 @@ def display():
                     progress_bar.progress(progress)
                     status_text.write(f"Processing frame {current_frame}/{total_frames}")
                 
+                # Get manual face center if available
+                manual_face_center = None
+                if detection_method == "Manual click positioning" and 'manual_face_center' in st.session_state:
+                    manual_face_center = st.session_state.manual_face_center
+                
                 # Process the video
                 with st.spinner("🧠 Analyzing facial features..."):
                     blank_frames, tracking_data = fdm.process_ai_video_simple(
                         temp_video_path, 
-                        progress_callback=progress_callback
+                        progress_callback=progress_callback,
+                        manual_face_center=manual_face_center
                     )
                 
                 progress_bar.empty()
@@ -118,17 +194,22 @@ def display():
                     # Show detection results
                     st.subheader("🔍 Detection Results")
                     
-                    # Count successful detections
-                    successful_detections = sum(1 for td in tracking_data if td['mouth'] is not None)
+                    # Count successful detections and check method used
+                    successful_detections = sum(1 for td in tracking_data if td.get('mouth') is not None)
                     detection_rate = (successful_detections / len(tracking_data)) * 100
                     
-                    col1, col2, col3 = st.columns(3)
+                    # Check if manual positioning was used
+                    positioning_method = "Manual" if manual_face_center else "Automatic"
+                    
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Total Frames", len(blank_frames))
                     with col2:
-                        st.metric("Faces Detected", successful_detections)
+                        st.metric("Faces Processed", successful_detections)
                     with col3:
-                        st.metric("Detection Rate", f"{detection_rate:.1f}%")
+                        st.metric("Success Rate", f"{detection_rate:.1f}%")
+                    with col4:
+                        st.metric("Method", positioning_method)
                     
                     # Show preview frames
                     st.subheader("🖼️ Processed Frame Preview")
@@ -165,11 +246,22 @@ def display():
                             st.image(blank_frames[frame_idx], use_container_width=True)
                         
                         # Show tracking data for this frame
-                        if tracking_data[frame_idx]['mouth']:
+                        if tracking_data[frame_idx].get('mouth'):
                             td = tracking_data[frame_idx]
-                            st.info(f"Mouth Center: {td['mouth']['center']}, Scale: {td['mouth']['scale']:.2f}, Rotation: {td['mouth']['rotation']:.1f}°")
+                            confidence = td.get('confidence', 0.5)
+                            method = td.get('method', 'unknown')
+                            
+                            mouth_info = f"Mouth: {td['mouth']['center']}, Scale: {td['mouth']['scale']:.2f}"
+                            confidence_info = f"Method: {method}, Confidence: {confidence:.1f}"
+                            
+                            if confidence > 0.9:
+                                st.success(f"✅ {mouth_info} | {confidence_info}")
+                            elif confidence > 0.7:
+                                st.info(f"ℹ️ {mouth_info} | {confidence_info}")
+                            else:
+                                st.warning(f"⚠️ {mouth_info} | {confidence_info}")
                         else:
-                            st.warning("No face detected in this frame")
+                            st.error("❌ No face data for this frame")
                         
                         st.write("---")
                     

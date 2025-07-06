@@ -22,17 +22,91 @@ class SimpleFacialProcessor:
         self.mouth_face_ratio = 0.3  # Mouth width as fraction of face width
         self.eye_face_ratio = 0.15  # Eye size as fraction of face width
     
-    def estimate_face_regions(self, image):
-        """Estimate face regions using image analysis and typical proportions."""
+    def estimate_face_regions(self, image, manual_face_center=None):
+        """Estimate face regions using manual positioning or automatic estimation."""
         if isinstance(image, Image.Image):
             img_array = np.array(image)
+            h, w = image.height, image.width
         else:
             img_array = image
+            h, w = img_array.shape[:2] if len(img_array.shape) > 2 else img_array.shape
         
-        h, w = img_array.shape[:2] if len(img_array.shape) > 2 else img_array.shape
+        if manual_face_center:
+            return self._estimate_from_manual_center(manual_face_center, w, h)
+        else:
+            return self._estimate_automatic(w, h)
+    
+    def _estimate_from_manual_center(self, face_center, w, h):
+        """Estimate regions based on manually clicked face center."""
+        face_center_x, face_center_y = face_center
         
+        # Estimate face size based on image dimensions (reasonable assumptions)
+        face_width = min(int(w * 0.4), int(h * 0.5))  # Face shouldn't be too large
+        face_height = int(face_width / self.face_ratio)
+        
+        # Face region centered on clicked point
+        face_x = face_center_x - face_width // 2
+        face_y = face_center_y - face_height // 2
+        
+        # Keep face within image bounds
+        face_x = max(0, min(face_x, w - face_width))
+        face_y = max(0, min(face_y, h - face_height))
+        
+        face_region = {
+            'bbox': (face_x, face_y, face_x + face_width, face_y + face_height),
+            'center': face_center
+        }
+        
+        # Mouth region (below face center)
+        mouth_width = int(face_width * self.mouth_face_ratio)
+        mouth_height = int(mouth_width * 0.5)
+        
+        mouth_x = face_center_x - mouth_width // 2
+        mouth_y = face_center_y + int(face_height * 0.2)  # Below center
+        
+        # Keep mouth within bounds
+        mouth_x = max(0, min(mouth_x, w - mouth_width))
+        mouth_y = max(0, min(mouth_y, h - mouth_height))
+        
+        mouth_region = {
+            'bbox': (mouth_x, mouth_y, mouth_x + mouth_width, mouth_y + mouth_height),
+            'center': (mouth_x + mouth_width // 2, mouth_y + mouth_height // 2)
+        }
+        
+        # Eye regions (above face center)
+        eye_size = int(face_width * self.eye_face_ratio)
+        eye_y = face_center_y - int(face_height * 0.15)  # Above center
+        
+        left_eye_x = face_center_x - int(face_width * 0.2) - eye_size // 2
+        right_eye_x = face_center_x + int(face_width * 0.2) - eye_size // 2
+        
+        # Keep eyes within bounds
+        left_eye_x = max(0, min(left_eye_x, w - eye_size))
+        right_eye_x = max(0, min(right_eye_x, w - eye_size))
+        eye_y = max(0, min(eye_y, h - eye_size))
+        
+        eyes = [
+            {  # Left eye
+                'bbox': (left_eye_x, eye_y, left_eye_x + eye_size, eye_y + eye_size),
+                'center': (left_eye_x + eye_size // 2, eye_y + eye_size // 2)
+            },
+            {  # Right eye  
+                'bbox': (right_eye_x, eye_y, right_eye_x + eye_size, eye_y + eye_size),
+                'center': (right_eye_x + eye_size // 2, eye_y + eye_size // 2)
+            }
+        ]
+        
+        return {
+            'face': face_region,
+            'mouth': mouth_region,
+            'eyes': eyes,
+            'confidence': 0.95,  # High confidence for manual positioning
+            'method': 'manual'
+        }
+    
+    def _estimate_automatic(self, w, h):
+        """Automatic estimation (original method)."""
         # For AI-generated videos, assume face is centered and takes up significant portion
-        # This is a reasonable assumption for character-focused videos
         
         # Estimate face region (center 60% of image, adjusted for typical framing)
         face_width = int(w * 0.6)
@@ -86,7 +160,8 @@ class SimpleFacialProcessor:
             'face': face_region,
             'mouth': mouth_region,
             'eyes': eyes,
-            'confidence': 0.8  # Estimated confidence
+            'confidence': 0.6,  # Lower confidence for automatic
+            'method': 'automatic'
         }
     
     def analyze_skin_color(self, image, face_region):
@@ -241,13 +316,18 @@ class SimpleFacialProcessor:
         
         return tracking_data
 
-def process_ai_video_simple(video_path, progress_callback=None):
+def process_ai_video_simple(video_path, progress_callback=None, manual_face_center=None):
     """
     Process AI video using simple geometric estimation (no OpenCV required).
     
+    Args:
+        video_path: Path to video file
+        progress_callback: Optional progress callback function
+        manual_face_center: Optional (x, y) tuple for manual face positioning
+    
     Returns:
-    - blank_frames: List of PIL Images with mouth/eyes removed
-    - tracking_data: Frame-by-frame facial tracking information
+        - blank_frames: List of PIL Images with mouth/eyes removed
+        - tracking_data: Frame-by-frame facial tracking information
     """
     processor = SimpleFacialProcessor()
     
@@ -265,8 +345,8 @@ def process_ai_video_simple(video_path, progress_callback=None):
                 frame = video.get_frame(frame_time)
                 frame_image = Image.fromarray(frame.astype('uint8'))
                 
-                # Estimate face regions
-                face_data = processor.estimate_face_regions(frame_image)
+                # Estimate face regions (with optional manual positioning)
+                face_data = processor.estimate_face_regions(frame_image, manual_face_center)
                 
                 # Create blank face
                 blank_face = processor.create_blank_face(frame_image, face_data)
