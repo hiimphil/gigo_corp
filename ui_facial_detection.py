@@ -71,8 +71,8 @@ def display():
             
             detection_method = st.radio(
                 "How to locate the face?",
-                ["Manual click positioning", "Automatic estimation"],
-                help="Manual click is much more accurate!"
+                ["Single click (face center)", "Multi-click (precise)", "Automatic estimation"],
+                help="Multi-click provides the most accurate results!"
             )
             
             # Number of preview frames to show
@@ -83,9 +83,9 @@ def display():
             )
         
         # Manual positioning section
-        if detection_method == "Manual click positioning":
+        if detection_method in ["Single click (face center)", "Multi-click (precise)"]:
             st.divider()
-            st.subheader("🎯 Click to Position Face")
+            st.subheader("🎯 Click to Position Facial Features")
             
             # Load first frame for positioning
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
@@ -100,42 +100,130 @@ def display():
                     frame = video.get_frame(mid_time)
                     positioning_frame = Image.fromarray(frame.astype('uint8'))
                 
-                st.write("**Click on the character's face center in this frame:**")
-                
                 # Convert PIL Image to numpy array for streamlit-image-coordinates
                 positioning_array = np.array(positioning_frame)
                 
-                # Use click coordinates for positioning
                 try:
                     from streamlit_image_coordinates import streamlit_image_coordinates
                     
-                    clicked_coords = streamlit_image_coordinates(
-                        positioning_array,
-                        key="face_position_click",
-                        width=min(positioning_frame.width, 600)
-                    )
+                    if detection_method == "Single click (face center)":
+                        st.write("**Click on the character's face center:**")
+                        
+                        clicked_coords = streamlit_image_coordinates(
+                            positioning_array,
+                            key="face_position_click",
+                            width=min(positioning_frame.width, 600)
+                        )
+                        
+                        if clicked_coords is not None:
+                            display_width = min(positioning_frame.width, 600)
+                            scale_factor = positioning_frame.width / display_width
+                            
+                            face_x = int(clicked_coords["x"] * scale_factor)
+                            face_y = int(clicked_coords["y"] * scale_factor)
+                            face_center = (face_x, face_y)
+                            
+                            st.success(f"✅ Face positioned at ({face_x}, {face_y})")
+                            st.session_state.manual_face_center = face_center
+                        
+                        if 'manual_face_center' in st.session_state:
+                            st.info(f"Current face center: {st.session_state.manual_face_center}")
+                        else:
+                            st.warning("👆 Click on the character's face center")
                     
-                    face_center = None
-                    if clicked_coords is not None:
-                        # Calculate scale factor if image was resized
-                        display_width = min(positioning_frame.width, 600)
-                        scale_factor = positioning_frame.width / display_width
+                    elif detection_method == "Multi-click (precise)":
+                        st.write("**Click on each facial feature for maximum precision:**")
                         
-                        face_x = int(clicked_coords["x"] * scale_factor)
-                        face_y = int(clicked_coords["y"] * scale_factor)
-                        face_center = (face_x, face_y)
+                        # Initialize session state for multi-click
+                        if 'multi_click_positions' not in st.session_state:
+                            st.session_state.multi_click_positions = {}
                         
-                        st.success(f"✅ Face positioned at ({face_x}, {face_y})")
+                        col1, col2 = st.columns(2)
                         
-                        # Store in session state
-                        st.session_state.manual_face_center = face_center
-                    
-                    # Show current position if exists
-                    if 'manual_face_center' in st.session_state:
-                        face_center = st.session_state.manual_face_center
-                        st.info(f"Current face center: {face_center}")
-                    else:
-                        st.warning("👆 Click on the character's face to set position")
+                        with col1:
+                            st.write("**1. Face Center:**")
+                            face_coords = streamlit_image_coordinates(
+                                positioning_array,
+                                key="multi_face_click",
+                                width=min(positioning_frame.width, 400)
+                            )
+                            
+                            if face_coords is not None:
+                                display_width = min(positioning_frame.width, 400)
+                                scale_factor = positioning_frame.width / display_width
+                                face_pos = (int(face_coords["x"] * scale_factor), int(face_coords["y"] * scale_factor))
+                                st.session_state.multi_click_positions['face'] = face_pos
+                                st.success(f"Face: {face_pos}")
+                            elif 'face' in st.session_state.multi_click_positions:
+                                st.info(f"Face: {st.session_state.multi_click_positions['face']}")
+                            else:
+                                st.warning("Click face center")
+                            
+                            st.write("**2. Mouth Center:**")
+                            mouth_coords = streamlit_image_coordinates(
+                                positioning_array,
+                                key="multi_mouth_click",
+                                width=min(positioning_frame.width, 400)
+                            )
+                            
+                            if mouth_coords is not None:
+                                display_width = min(positioning_frame.width, 400)
+                                scale_factor = positioning_frame.width / display_width
+                                mouth_pos = (int(mouth_coords["x"] * scale_factor), int(mouth_coords["y"] * scale_factor))
+                                st.session_state.multi_click_positions['mouth'] = mouth_pos
+                                st.success(f"Mouth: {mouth_pos}")
+                            elif 'mouth' in st.session_state.multi_click_positions:
+                                st.info(f"Mouth: {st.session_state.multi_click_positions['mouth']}")
+                            else:
+                                st.warning("Click mouth center")
+                        
+                        with col2:
+                            st.write("**3. Left Eye:**")
+                            left_eye_coords = streamlit_image_coordinates(
+                                positioning_array,
+                                key="multi_left_eye_click",
+                                width=min(positioning_frame.width, 400)
+                            )
+                            
+                            if left_eye_coords is not None:
+                                display_width = min(positioning_frame.width, 400)
+                                scale_factor = positioning_frame.width / display_width
+                                left_eye_pos = (int(left_eye_coords["x"] * scale_factor), int(left_eye_coords["y"] * scale_factor))
+                                st.session_state.multi_click_positions['left_eye'] = left_eye_pos
+                                st.success(f"Left Eye: {left_eye_pos}")
+                            elif 'left_eye' in st.session_state.multi_click_positions:
+                                st.info(f"Left Eye: {st.session_state.multi_click_positions['left_eye']}")
+                            else:
+                                st.warning("Click left eye")
+                            
+                            st.write("**4. Right Eye:**")
+                            right_eye_coords = streamlit_image_coordinates(
+                                positioning_array,
+                                key="multi_right_eye_click",
+                                width=min(positioning_frame.width, 400)
+                            )
+                            
+                            if right_eye_coords is not None:
+                                display_width = min(positioning_frame.width, 400)
+                                scale_factor = positioning_frame.width / display_width
+                                right_eye_pos = (int(right_eye_coords["x"] * scale_factor), int(right_eye_coords["y"] * scale_factor))
+                                st.session_state.multi_click_positions['right_eye'] = right_eye_pos
+                                st.success(f"Right Eye: {right_eye_pos}")
+                            elif 'right_eye' in st.session_state.multi_click_positions:
+                                st.info(f"Right Eye: {st.session_state.multi_click_positions['right_eye']}")
+                            else:
+                                st.warning("Click right eye")
+                        
+                        # Show summary of positions
+                        positions = st.session_state.multi_click_positions
+                        if len(positions) > 0:
+                            st.write("**Current Positions:**")
+                            for feature, pos in positions.items():
+                                st.write(f"- {feature.title()}: {pos}")
+                            
+                            if st.button("🗑️ Clear All Positions"):
+                                st.session_state.multi_click_positions = {}
+                                st.rerun()
                 
                 except ImportError:
                     st.error("Click positioning requires streamlit-image-coordinates package")
@@ -171,18 +259,29 @@ def display():
                     progress_bar.progress(progress)
                     status_text.write(f"Processing frame {current_frame}/{total_frames}")
                 
-                # Get manual face center if available
+                # Get manual positioning data
                 manual_face_center = None
-                if detection_method == "Manual click positioning" and 'manual_face_center' in st.session_state:
+                multi_click_data = None
+                
+                if detection_method == "Single click (face center)" and 'manual_face_center' in st.session_state:
                     manual_face_center = st.session_state.manual_face_center
+                elif detection_method == "Multi-click (precise)" and 'multi_click_positions' in st.session_state:
+                    multi_click_data = st.session_state.multi_click_positions
                 
                 # Process the video
                 with st.spinner("🧠 Analyzing facial features..."):
-                    blank_frames, tracking_data = fdm.process_ai_video_simple(
-                        temp_video_path, 
-                        progress_callback=progress_callback,
-                        manual_face_center=manual_face_center
-                    )
+                    if multi_click_data:
+                        blank_frames, tracking_data = fdm.process_ai_video_multi_click(
+                            temp_video_path, 
+                            progress_callback=progress_callback,
+                            multi_click_positions=multi_click_data
+                        )
+                    else:
+                        blank_frames, tracking_data = fdm.process_ai_video_simple(
+                            temp_video_path, 
+                            progress_callback=progress_callback,
+                            manual_face_center=manual_face_center
+                        )
                 
                 progress_bar.empty()
                 status_text.empty()
@@ -197,8 +296,13 @@ def display():
                     successful_detections = sum(1 for td in tracking_data if td.get('mouth') is not None)
                     detection_rate = (successful_detections / len(tracking_data)) * 100
                     
-                    # Check if manual positioning was used
-                    positioning_method = "Manual" if manual_face_center else "Automatic"
+                    # Check which positioning method was used
+                    if multi_click_data:
+                        positioning_method = "Multi-Click"
+                    elif manual_face_center:
+                        positioning_method = "Single Click"
+                    else:
+                        positioning_method = "Automatic"
                     
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
