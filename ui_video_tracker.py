@@ -345,9 +345,10 @@ def display():
                         try:
                             from streamlit_image_coordinates import streamlit_image_coordinates
                             
-                            # Pass the PIL Image directly instead of bytes
+                            # Convert PIL Image to numpy array for streamlit-image-coordinates
+                            display_array = np.array(display_frame)
                             clicked_coords = streamlit_image_coordinates(
-                                display_frame,
+                                display_array,
                                 key=f"image_click_{frame_time}",
                                 width=display_frame.width if display_frame.width <= 800 else 800
                             )
