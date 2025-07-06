@@ -31,7 +31,7 @@ TEXT_SPACING = cgm.SPACING_BETWEEN_LINES  # 8
 
 # --- Default Asset Paths ---
 DEFAULT_BG_AUDIO_PATH = "SFX/buzz.mp3"
-OPENING_SEQUENCE_PATH = "Video/OpeningSequence.mp4"
+OPENING_SEQUENCE_PATH = "Video/EndingSequence.mp4"
 CARTOON_IMAGE_BASE_PATH = "Cartoon_Images/"
 
 # --- Tracking Dot Configuration ---
