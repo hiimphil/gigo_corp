@@ -9,6 +9,7 @@ import ui_sidebar
 import ui_comic_maker
 import ui_cartoon_maker
 import ui_frame_extractor
+import ui_video_tracker
 
 # --- Session State Initialization ---
 # This block ensures all keys exist before any UI is rendered.
@@ -50,7 +51,12 @@ def main():
     is_admin = ui_sidebar.display_sidebar()
 
     # Create the main tabs for the different workflows
-    comic_tab, cartoon_tab, extractor_tab = st.tabs(["**Web Comic Maker**", "**Cartoon Maker**", "**Frame Extractor**"])
+    comic_tab, cartoon_tab, extractor_tab, tracker_tab = st.tabs([
+        "**Web Comic Maker**", 
+        "**Cartoon Maker**", 
+        "**Frame Extractor**", 
+        "**Video Tracker**"
+    ])
 
     with comic_tab:
         ui_comic_maker.display(is_admin)
@@ -60,6 +66,9 @@ def main():
     
     with extractor_tab:
         ui_frame_extractor.display()
+    
+    with tracker_tab:
+        ui_video_tracker.display()
 
 if __name__ == "__main__":
     main()
