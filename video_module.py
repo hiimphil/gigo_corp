@@ -440,14 +440,14 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
                     existing_clip.close()
                 return None, f"Error loading scene {i} ({path}): {e}"
         
-        # 2. Prepend the opening sequence
+        # 2. Append the opening sequence to the end
         if os.path.exists(OPENING_SEQUENCE_PATH):
             try:
                 st.write(f"  Adding opening sequence...")
                 opening_clip = VideoFileClip(OPENING_SEQUENCE_PATH)
                 if opening_clip.size != [STANDARD_WIDTH, STANDARD_HEIGHT]:
                      return None, f"OpeningSequence.mp4 is not {STANDARD_WIDTH}x{STANDARD_HEIGHT}."
-                scene_clips.insert(0, opening_clip)
+                scene_clips.append(opening_clip)
             except Exception as e:
                 return None, f"Failed to load opening sequence: {e}"
 
@@ -615,7 +615,12 @@ def assemble_with_batch_moviepy(scene_paths, background_audio_path=None):
         # Now assemble all batch files plus opening sequence
         final_clips = []
         
-        # Add opening sequence if it exists
+        # Add all batch files first
+        for batch_path in batch_files:
+            batch_clip = VideoFileClip(batch_path)
+            final_clips.append(batch_clip)
+        
+        # Add opening sequence at the end if it exists
         if os.path.exists(OPENING_SEQUENCE_PATH):
             try:
                 st.write(f"  Adding opening sequence...")
@@ -627,11 +632,6 @@ def assemble_with_batch_moviepy(scene_paths, background_audio_path=None):
                     opening_clip.close()
             except Exception as e:
                 st.warning(f"Skipping opening sequence: {e}")
-        
-        # Add all batch files
-        for batch_path in batch_files:
-            batch_clip = VideoFileClip(batch_path)
-            final_clips.append(batch_clip)
         
         # Concatenate all final clips
         st.write(f"  Concatenating {len(final_clips)} segments...")
