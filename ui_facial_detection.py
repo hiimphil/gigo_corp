@@ -8,6 +8,7 @@ import tempfile
 import os
 import zipfile
 import io
+import numpy as np
 from PIL import Image
 import simple_facial_detection as fdm
 
@@ -101,17 +102,15 @@ def display():
                 
                 st.write("**Click on the character's face center in this frame:**")
                 
-                # Convert to bytes for click detection
-                img_buffer = io.BytesIO()
-                positioning_frame.save(img_buffer, format='PNG')
-                img_bytes = img_buffer.getvalue()
+                # Convert PIL Image to numpy array for streamlit-image-coordinates
+                positioning_array = np.array(positioning_frame)
                 
                 # Use click coordinates for positioning
                 try:
                     from streamlit_image_coordinates import streamlit_image_coordinates
                     
                     clicked_coords = streamlit_image_coordinates(
-                        img_bytes,
+                        positioning_array,
                         key="face_position_click",
                         width=min(positioning_frame.width, 600)
                     )
