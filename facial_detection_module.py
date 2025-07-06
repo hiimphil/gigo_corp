@@ -11,291 +11,243 @@ This module handles:
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
-import mediapipe as mp
+from PIL import Image, ImageDraw, ImageFilter
 import tempfile
 import os
 from moviepy.editor import VideoFileClip
 import streamlit as st
 
-# --- MediaPipe Configuration ---
-mp_face_detection = mp.solutions.face_detection
-mp_face_mesh = mp.solutions.face_mesh
-mp_drawing = mp.solutions.drawing_utils
-
-# --- Face landmark indices for mouth and eyes ---
-MOUTH_LANDMARKS = [
-    # Outer mouth boundary
-    61, 84, 17, 314, 405, 320, 307, 375, 321, 308, 324, 318,
-    # Inner mouth
-    78, 95, 88, 178, 87, 14, 317, 402, 318, 324
-]
-
-EYE_LANDMARKS = {
-    'left_eye': [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
-    'right_eye': [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
-}
+# --- OpenCV Face Detection Configuration ---
+# Download haarcascade files if needed
+FACE_CASCADE_URL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+EYE_CASCADE_URL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_eye.xml"
 
 class FacialDetector:
-    """Handles face detection and processing for AI-generated videos."""
+    """Handles face detection and processing for AI-generated videos using OpenCV."""
     
     def __init__(self):
-        self.face_detection = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
-        self.face_mesh = mp_face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
+        # Initialize OpenCV cascade classifiers
+        try:
+            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+        except Exception as e:
+            print(f"Warning: Could not load cascade classifiers: {e}")
+            self.face_cascade = None
+            self.eye_cascade = None
     
-    def detect_face_landmarks(self, image):
-        """Detect face landmarks using MediaPipe."""
+    def detect_face_regions(self, image):
+        """Detect face, mouth, and eye regions using OpenCV."""
+        if self.face_cascade is None:
+            return None
+        
         # Convert PIL to OpenCV format
         if isinstance(image, Image.Image):
             image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         else:
             image_cv = image
         
-        # Convert to RGB for MediaPipe
-        image_rgb = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
+        # Convert to grayscale for detection
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
         
-        # Detect face mesh
-        results = self.face_mesh.process(image_rgb)
+        # Detect faces
+        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
         
-        if results.multi_face_landmarks:
-            face_landmarks = results.multi_face_landmarks[0]
-            h, w = image_rgb.shape[:2]
-            
-            # Convert normalized landmarks to pixel coordinates
-            landmarks = []
-            for landmark in face_landmarks.landmark:
-                x = int(landmark.x * w)
-                y = int(landmark.y * h)
-                landmarks.append((x, y))
-            
-            return landmarks, (w, h)
+        if len(faces) == 0:
+            return None
         
-        return None, None
-    
-    def extract_mouth_region(self, image, landmarks, padding=20):
-        """Extract mouth region with padding."""
-        if not landmarks:
-            return None, None
+        # Use the largest face detected
+        face = max(faces, key=lambda f: f[2] * f[3])
+        x, y, w, h = face
         
-        # Get mouth landmark points
-        mouth_points = [landmarks[i] for i in MOUTH_LANDMARKS if i < len(landmarks)]
-        
-        if not mouth_points:
-            return None, None
-        
-        # Find bounding box
-        xs = [p[0] for p in mouth_points]
-        ys = [p[1] for p in mouth_points]
-        
-        min_x, max_x = min(xs) - padding, max(xs) + padding
-        min_y, max_y = min(ys) - padding, max(ys) + padding
-        
-        # Create mouth mask
-        if isinstance(image, Image.Image):
-            mask = Image.new('L', image.size, 0)
-            draw = ImageDraw.Draw(mask)
-            draw.polygon(mouth_points, fill=255)
-        else:
-            mask = np.zeros(image.shape[:2], dtype=np.uint8)
-            cv2.fillPoly(mask, [np.array(mouth_points)], 255)
+        # Estimate mouth region (bottom third of face)
+        mouth_y_start = y + int(h * 0.65)
+        mouth_y_end = y + h
+        mouth_x_start = x + int(w * 0.25)
+        mouth_x_end = x + int(w * 0.75)
         
         mouth_region = {
-            'bbox': (min_x, min_y, max_x, max_y),
-            'mask': mask,
-            'center': ((min_x + max_x) // 2, (min_y + max_y) // 2),
-            'landmarks': mouth_points
+            'bbox': (mouth_x_start, mouth_y_start, mouth_x_end, mouth_y_end),
+            'center': ((mouth_x_start + mouth_x_end) // 2, (mouth_y_start + mouth_y_end) // 2)
         }
         
-        return mouth_region, mouth_points
+        # Detect eyes within face region
+        face_roi = gray[y:y+h, x:x+w]
+        eyes = []
+        if self.eye_cascade is not None:
+            eyes_detected = self.eye_cascade.detectMultiScale(face_roi, scaleFactor=1.1, minNeighbors=3)
+            
+            for (ex, ey, ew, eh) in eyes_detected:
+                # Convert back to full image coordinates
+                eye_region = {
+                    'bbox': (x + ex, y + ey, x + ex + ew, y + ey + eh),
+                    'center': (x + ex + ew//2, y + ey + eh//2)
+                }
+                eyes.append(eye_region)
+        
+        # If no eyes detected, estimate based on face
+        if len(eyes) == 0:
+            # Estimate eye positions
+            eye_y = y + int(h * 0.35)
+            left_eye_x = x + int(w * 0.25)
+            right_eye_x = x + int(w * 0.75)
+            eye_size = int(w * 0.15)
+            
+            eyes = [
+                {  # Left eye
+                    'bbox': (left_eye_x - eye_size//2, eye_y - eye_size//2, 
+                            left_eye_x + eye_size//2, eye_y + eye_size//2),
+                    'center': (left_eye_x, eye_y)
+                },
+                {  # Right eye
+                    'bbox': (right_eye_x - eye_size//2, eye_y - eye_size//2, 
+                            right_eye_x + eye_size//2, eye_y + eye_size//2),
+                    'center': (right_eye_x, eye_y)
+                }
+            ]
+        
+        return {
+            'face': {'bbox': (x, y, x+w, y+h), 'center': (x+w//2, y+h//2)},
+            'mouth': mouth_region,
+            'eyes': eyes,
+            'image_size': (image_cv.shape[1], image_cv.shape[0])
+        }
     
-    def extract_eye_regions(self, image, landmarks, padding=15):
-        """Extract eye regions with padding."""
-        if not landmarks:
-            return None, None
-        
-        eye_regions = {}
-        
-        for eye_name, eye_indices in EYE_LANDMARKS.items():
-            eye_points = [landmarks[i] for i in eye_indices if i < len(landmarks)]
-            
-            if not eye_points:
-                continue
-            
-            # Find bounding box
-            xs = [p[0] for p in eye_points]
-            ys = [p[1] for p in eye_points]
-            
-            min_x, max_x = min(xs) - padding, max(xs) + padding
-            min_y, max_y = min(ys) - padding, max(ys) + padding
-            
-            # Create eye mask
-            if isinstance(image, Image.Image):
-                mask = Image.new('L', image.size, 0)
-                draw = ImageDraw.Draw(mask)
-                draw.polygon(eye_points, fill=255)
-            else:
-                mask = np.zeros(image.shape[:2], dtype=np.uint8)
-                cv2.fillPoly(mask, [np.array(eye_points)], 255)
-            
-            eye_regions[eye_name] = {
-                'bbox': (min_x, min_y, max_x, max_y),
-                'mask': mask,
-                'center': ((min_x + max_x) // 2, (min_y + max_y) // 2),
-                'landmarks': eye_points
-            }
-        
-        return eye_regions
-    
-    def create_blank_face(self, image, mouth_region, eye_regions, skin_color=None):
-        """Create a blank face by removing mouth and eyes."""
+    def create_blank_face(self, image, face_data, skin_color=None):
+        """Create a blank face by removing mouth and eyes using OpenCV detection."""
         if isinstance(image, Image.Image):
             blank_face = image.copy()
         else:
             blank_face = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         
+        if not face_data:
+            return blank_face
+        
         # Auto-detect skin color if not provided
         if skin_color is None:
-            skin_color = self.estimate_skin_color(blank_face, mouth_region, eye_regions)
+            skin_color = self.estimate_skin_color(blank_face, face_data)
         
-        # Remove mouth
-        if mouth_region:
-            self.fill_region(blank_face, mouth_region['mask'], skin_color)
+        # Remove mouth region
+        if 'mouth' in face_data:
+            mouth_bbox = face_data['mouth']['bbox']
+            self.fill_bbox_region(blank_face, mouth_bbox, skin_color)
         
-        # Remove eyes
-        if eye_regions:
-            for eye_region in eye_regions.values():
-                self.fill_region(blank_face, eye_region['mask'], skin_color)
+        # Remove eye regions
+        if 'eyes' in face_data:
+            for eye in face_data['eyes']:
+                eye_bbox = eye['bbox']
+                self.fill_bbox_region(blank_face, eye_bbox, skin_color)
         
         return blank_face
     
-    def estimate_skin_color(self, image, mouth_region, eye_regions):
+    def estimate_skin_color(self, image, face_data):
         """Estimate skin color from face area excluding mouth and eyes."""
-        # Convert to numpy for processing
         img_array = np.array(image)
         
-        # Create exclusion mask (areas to avoid when sampling skin)
-        h, w = img_array.shape[:2]
-        exclusion_mask = np.zeros((h, w), dtype=np.uint8)
+        if not face_data or 'face' not in face_data:
+            return (220, 180, 140)  # Fallback neutral skin tone
         
-        # Add mouth and eye regions to exclusion mask
-        if mouth_region:
-            mouth_mask = np.array(mouth_region['mask'])
-            exclusion_mask = cv2.bitwise_or(exclusion_mask, mouth_mask)
+        # Sample from the face region, avoiding mouth and eyes
+        face_bbox = face_data['face']['bbox']
+        x1, y1, x2, y2 = face_bbox
         
-        if eye_regions:
-            for eye_region in eye_regions.values():
-                eye_mask = np.array(eye_region['mask'])
-                exclusion_mask = cv2.bitwise_or(exclusion_mask, eye_mask)
+        # Sample from cheek areas (sides of face, middle height)
+        cheek_y_start = y1 + int((y2 - y1) * 0.4)
+        cheek_y_end = y1 + int((y2 - y1) * 0.6)
         
-        # Sample skin color from non-excluded areas
-        valid_pixels = img_array[exclusion_mask == 0]
+        # Left cheek
+        left_cheek_x_start = x1 + int((x2 - x1) * 0.1)
+        left_cheek_x_end = x1 + int((x2 - x1) * 0.3)
         
-        if len(valid_pixels) > 0:
+        # Right cheek
+        right_cheek_x_start = x1 + int((x2 - x1) * 0.7)
+        right_cheek_x_end = x1 + int((x2 - x1) * 0.9)
+        
+        # Sample pixels from cheek areas
+        sample_pixels = []
+        
+        # Left cheek samples
+        if left_cheek_x_start < img_array.shape[1] and cheek_y_start < img_array.shape[0]:
+            left_cheek = img_array[cheek_y_start:cheek_y_end, left_cheek_x_start:left_cheek_x_end]
+            if left_cheek.size > 0:
+                sample_pixels.extend(left_cheek.reshape(-1, 3))
+        
+        # Right cheek samples
+        if right_cheek_x_start < img_array.shape[1] and cheek_y_start < img_array.shape[0]:
+            right_cheek = img_array[cheek_y_start:cheek_y_end, right_cheek_x_start:right_cheek_x_end]
+            if right_cheek.size > 0:
+                sample_pixels.extend(right_cheek.reshape(-1, 3))
+        
+        if sample_pixels:
             # Use median color for more stable results
-            skin_color = np.median(valid_pixels, axis=0).astype(int)
+            skin_color = np.median(sample_pixels, axis=0).astype(int)
             return tuple(skin_color)
         
         # Fallback to neutral skin tone
         return (220, 180, 140)
     
-    def fill_region(self, image, mask, color):
-        """Fill a masked region with specified color."""
-        # Convert mask to PIL format if needed
-        if isinstance(mask, np.ndarray):
-            mask_pil = Image.fromarray(mask)
-        else:
-            mask_pil = mask
+    def fill_bbox_region(self, image, bbox, color):
+        """Fill a bounding box region with specified color."""
+        x1, y1, x2, y2 = bbox
         
-        # Create solid color image
-        color_img = Image.new('RGB', image.size, color)
-        
-        # Paste color where mask is white
-        image.paste(color_img, mask=mask_pil)
+        # Create a filled rectangle
+        draw = ImageDraw.Draw(image)
+        draw.rectangle([x1, y1, x2, y2], fill=color)
     
-    def generate_tracking_data(self, landmarks, image_size):
-        """Generate tracking data for mouth and eyes."""
-        if not landmarks:
+    def generate_tracking_data(self, face_data):
+        """Generate tracking data for mouth and eyes from OpenCV detection."""
+        if not face_data:
             return None
         
-        w, h = image_size
-        
-        # Extract mouth data
-        mouth_points = [landmarks[i] for i in MOUTH_LANDMARKS if i < len(landmarks)]
-        mouth_center = self.get_center_point(mouth_points)
-        mouth_scale = self.calculate_scale(mouth_points)
-        mouth_rotation = self.calculate_rotation(mouth_points)
-        
-        # Extract eye data
-        eye_data = {}
-        for eye_name, eye_indices in EYE_LANDMARKS.items():
-            eye_points = [landmarks[i] for i in eye_indices if i < len(landmarks)]
-            if eye_points:
-                eye_data[eye_name] = {
-                    'center': self.get_center_point(eye_points),
-                    'scale': self.calculate_scale(eye_points),
-                    'rotation': self.calculate_rotation(eye_points)
-                }
-        
         tracking_data = {
-            'mouth': {
-                'center': mouth_center,
-                'scale': mouth_scale,
-                'rotation': mouth_rotation,
-                'landmarks': mouth_points
-            },
-            'eyes': eye_data,
-            'face_landmarks': landmarks
+            'mouth': None,
+            'eyes': [],
+            'face': face_data.get('face')
         }
         
+        # Extract mouth tracking data
+        if 'mouth' in face_data:
+            mouth = face_data['mouth']
+            mouth_bbox = mouth['bbox']
+            mouth_width = mouth_bbox[2] - mouth_bbox[0]
+            mouth_height = mouth_bbox[3] - mouth_bbox[1]
+            
+            # Calculate scale based on mouth size (normalize to reference size)
+            reference_size = 40
+            mouth_scale = max(mouth_width, mouth_height) / reference_size
+            mouth_scale = max(0.5, min(2.0, mouth_scale))  # Clamp between 0.5x and 2.0x
+            
+            tracking_data['mouth'] = {
+                'center': mouth['center'],
+                'scale': mouth_scale,
+                'rotation': 0.0,  # OpenCV doesn't provide rotation easily
+                'bbox': mouth_bbox
+            }
+        
+        # Extract eye tracking data
+        if 'eyes' in face_data:
+            for i, eye in enumerate(face_data['eyes']):
+                eye_bbox = eye['bbox']
+                eye_width = eye_bbox[2] - eye_bbox[0]
+                eye_height = eye_bbox[3] - eye_bbox[1]
+                
+                # Calculate scale
+                eye_scale = max(eye_width, eye_height) / 20  # Reference eye size
+                eye_scale = max(0.5, min(2.0, eye_scale))
+                
+                eye_data = {
+                    'center': eye['center'],
+                    'scale': eye_scale,
+                    'rotation': 0.0,
+                    'bbox': eye_bbox,
+                    'eye_id': f'eye_{i}'
+                }
+                tracking_data['eyes'].append(eye_data)
+        
         return tracking_data
-    
-    def get_center_point(self, points):
-        """Calculate center point of a set of landmarks."""
-        if not points:
-            return (0, 0)
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        return (sum(xs) // len(xs), sum(ys) // len(ys))
-    
-    def calculate_scale(self, points):
-        """Calculate scale factor based on landmark spread."""
-        if len(points) < 2:
-            return 1.0
-        
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        
-        width = max(xs) - min(xs)
-        height = max(ys) - min(ys)
-        
-        # Normalize to reference size (adjust based on your needs)
-        reference_size = 40
-        scale = max(width, height) / reference_size
-        return max(0.5, min(2.0, scale))  # Clamp between 0.5x and 2.0x
-    
-    def calculate_rotation(self, points):
-        """Calculate rotation angle based on landmark orientation."""
-        if len(points) < 2:
-            return 0.0
-        
-        # Use first and last points to estimate orientation
-        p1, p2 = points[0], points[-1]
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        
-        # Calculate angle in degrees
-        angle = np.degrees(np.arctan2(dy, dx))
-        return angle
 
 def process_ai_video(video_path, progress_callback=None):
     """
-    Main function to process an AI-generated video and extract facial data.
+    Main function to process an AI-generated video and extract facial data using OpenCV.
     
     Returns:
     - blank_frames: List of PIL Images with mouth/eyes removed
@@ -317,24 +269,27 @@ def process_ai_video(video_path, progress_callback=None):
                 frame = video.get_frame(frame_time)
                 frame_image = Image.fromarray(frame.astype('uint8'))
                 
-                # Detect face landmarks
-                landmarks, image_size = detector.detect_face_landmarks(frame_image)
+                # Detect face regions using OpenCV
+                face_data = detector.detect_face_regions(frame_image)
                 
-                if landmarks:
-                    # Extract facial regions
-                    mouth_region, _ = detector.extract_mouth_region(frame_image, landmarks)
-                    eye_regions = detector.extract_eye_regions(frame_image, landmarks)
-                    
+                if face_data:
                     # Create blank face
-                    blank_face = detector.create_blank_face(frame_image, mouth_region, eye_regions)
+                    blank_face = detector.create_blank_face(frame_image, face_data)
                     
                     # Generate tracking data
-                    frame_tracking = detector.generate_tracking_data(landmarks, image_size)
-                    frame_tracking['frame_number'] = frame_num + 1
-                    frame_tracking['time'] = frame_time
+                    frame_tracking = detector.generate_tracking_data(face_data)
+                    if frame_tracking:
+                        frame_tracking['frame_number'] = frame_num + 1
+                        frame_tracking['time'] = frame_time
                     
                     blank_frames.append(blank_face)
-                    tracking_data.append(frame_tracking)
+                    tracking_data.append(frame_tracking if frame_tracking else {
+                        'frame_number': frame_num + 1,
+                        'time': frame_time,
+                        'mouth': None,
+                        'eyes': [],
+                        'face': None
+                    })
                 else:
                     # No face detected - use original frame
                     blank_frames.append(frame_image)
@@ -342,8 +297,8 @@ def process_ai_video(video_path, progress_callback=None):
                         'frame_number': frame_num + 1,
                         'time': frame_time,
                         'mouth': None,
-                        'eyes': None,
-                        'face_landmarks': None
+                        'eyes': [],
+                        'face': None
                     })
                 
                 # Progress update

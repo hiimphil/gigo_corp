@@ -15,5 +15,4 @@ mutagen>=1.45.1
 imageio-ffmpeg>=0.4.9
 elevenlabs>=1.0.0
 streamlit-image-coordinates
-mediapipe>=0.10.0
-opencv-python>=4.8.0
+opencv-python-headless==4.8.1.78
