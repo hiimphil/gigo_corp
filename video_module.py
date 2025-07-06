@@ -410,7 +410,7 @@ def assemble_final_cartoon(scene_paths, background_audio_path=None):
         # --- SIMPLIFIED ASSEMBLY PROCESS ---
         # 1. Memory-efficient approach: Choose best method based on scene count
         # Choose assembly method based on scene count
-        if len(scene_paths) <= 10:
+        if len(scene_paths) <= 5:
             st.write(f"  Using MoviePy for {len(scene_paths)} scenes...")
             # Continue with original MoviePy approach below
         else:
