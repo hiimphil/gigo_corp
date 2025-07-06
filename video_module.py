@@ -549,7 +549,7 @@ def assemble_with_batch_moviepy(scene_paths, background_audio_path=None):
         st.write(f"  Processing {len(scene_paths)} scenes in batches...")
         
         # Configuration
-        BATCH_SIZE = 8  # Process 8 scenes per batch for optimal memory usage
+        BATCH_SIZE = 5  # Process 5 scenes per batch for optimal memory usage
         temp_dir = tempfile.mkdtemp()
         batch_files = []
         
