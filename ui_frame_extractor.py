@@ -23,14 +23,17 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
             total_frames = int(duration * fps)
             
             st.write(f"📹 Video info: {duration:.2f}s, {fps} FPS, {total_frames} frames")
+            st.write(f"🎛️ Duplicate removal: {'Enabled' if remove_duplicates else 'Disabled'}")
+            if remove_duplicates:
+                st.write(f"🎯 Similarity threshold: {similarity_threshold:.2f} (lower = less aggressive)")
             
             # Progress tracking
             progress_bar = st.progress(0)
             status_text = st.empty()
+            debug_text = st.empty()
             
             extracted_files = []
-            previous_frame = None
-            previous_hash = None
+            previous_frame_array = None
             duplicates_removed = 0
             
             for i in range(total_frames):
@@ -39,32 +42,29 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
                 
                 # Convert to PIL Image
                 frame_image = Image.fromarray(frame.astype('uint8'))
+                current_frame_array = np.array(frame_image)
                 
                 should_save = True
+                similarity_score = 0.0
                 
-                if remove_duplicates and previous_frame is not None:
-                    # Quick hash comparison with immediate previous frame only
-                    current_hash = calculate_frame_hash(frame)
+                if remove_duplicates and previous_frame_array is not None:
+                    # Resize both frames for comparison (faster and more reliable)
+                    prev_small = Image.fromarray(previous_frame_array).resize((32, 32))
+                    curr_small = frame_image.resize((32, 32))
                     
-                    if current_hash == previous_hash:
-                        # Identical frames (hash match)
+                    prev_array = np.array(prev_small, dtype=float)
+                    curr_array = np.array(curr_small, dtype=float)
+                    
+                    # Calculate mean absolute difference
+                    diff = np.mean(np.abs(prev_array - curr_array)) / 255.0
+                    similarity_score = 1.0 - diff  # Convert to similarity (1.0 = identical, 0.0 = completely different)
+                    
+                    if similarity_score > similarity_threshold:
                         should_save = False
                         duplicates_removed += 1
-                    else:
-                        # Different hashes, but check pixel-level similarity
-                        prev_array = np.array(previous_frame.resize((64, 64)))
-                        curr_array = np.array(frame_image.resize((64, 64)))
-                        
-                        # Calculate similarity (0 = identical, 1 = completely different)
-                        diff = np.mean(np.abs(prev_array.astype(float) - curr_array.astype(float))) / 255.0
-                        similarity = 1.0 - diff
-                        
-                        if similarity > similarity_threshold:
-                            should_save = False
-                            duplicates_removed += 1
                 
                 if should_save:
-                    # Generate filename with sequential numbering for unique frames
+                    # Always save the first frame
                     unique_frame_number = len(extracted_files) + 1
                     frame_filename = f"{frame_prefix}_{unique_frame_number:02d}.png"
                     frame_path = os.path.join(output_dir, frame_filename)
@@ -72,23 +72,29 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
                     # Save frame
                     frame_image.save(frame_path, "PNG")
                     extracted_files.append(frame_path)
-                    previous_frame = frame_image
-                    previous_hash = calculate_frame_hash(frame)
+                    
+                    # Update previous frame for next comparison
+                    previous_frame_array = current_frame_array
                 
                 # Update progress
                 progress = (i + 1) / total_frames
                 progress_bar.progress(progress)
                 
                 if remove_duplicates:
-                    status_text.write(f"Processing frame {i+1}/{total_frames} | Unique: {len(extracted_files)} | Duplicates removed: {duplicates_removed}")
+                    status_text.write(f"Processing frame {i+1}/{total_frames} | Unique: {len(extracted_files)} | Duplicates: {duplicates_removed}")
+                    if i > 0:  # Show similarity for debugging
+                        debug_text.write(f"Frame {i+1} similarity to previous: {similarity_score:.3f} ({'SAVED' if should_save else 'SKIPPED'})")
                 else:
                     status_text.write(f"Extracting frame {i+1}/{total_frames}")
             
             progress_bar.empty()
             status_text.empty()
+            debug_text.empty()
             
             if remove_duplicates and duplicates_removed > 0:
                 st.info(f"🔄 Removed {duplicates_removed} duplicate frames. Saved {len(extracted_files)} unique frames.")
+            elif remove_duplicates:
+                st.success(f"✨ No duplicates found! Saved all {len(extracted_files)} frames.")
             
             return extracted_files, None
             
