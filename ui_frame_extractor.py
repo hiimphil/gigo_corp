@@ -159,11 +159,11 @@ def display():
             if remove_duplicates:
                 similarity_threshold = st.slider(
                     "Similarity threshold", 
-                    0.85, 0.99, 0.95, 0.01,
-                    help="Higher = more aggressive duplicate removal"
+                    0.01, 0.99, 0.85, 0.01,
+                    help="Higher = more aggressive duplicate removal. Start with 0.85 for subtle motion."
                 )
             else:
-                similarity_threshold = 0.95
+                similarity_threshold = 0.85
         
         with col3:
             st.write("**Preview Settings:**")
