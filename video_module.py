@@ -112,15 +112,60 @@ def find_tracking_dots(image_array):
     right_pos = (right_dot_coords[1][0], right_dot_coords[0][0])
     return left_pos, right_pos
 
+def find_motion_sequence(character, direction, action):
+    """
+    Finds motion sequence images for a character. Returns either:
+    - List of motion frame paths (for animated sequences)
+    - Single base image path (for static scenes)
+    """
+    base_dir = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action)
+    fallback_dir = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal")
+    
+    # Try the specific action directory first
+    dirs_to_check = [base_dir, fallback_dir]
+    
+    for directory in dirs_to_check:
+        if not os.path.exists(directory):
+            continue
+            
+        try:
+            files = os.listdir(directory)
+            
+            # Look for numbered motion sequences: base_01.png, base_02.png, etc.
+            motion_files = []
+            for filename in files:
+                if filename.lower().startswith('base_') and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    # Extract number from filename like "base_01.png"
+                    try:
+                        num_part = filename.split('_')[1].split('.')[0]
+                        frame_num = int(num_part)
+                        motion_files.append((frame_num, os.path.join(directory, filename)))
+                    except (ValueError, IndexError):
+                        continue
+            
+            # If we found numbered motion files, return them sorted by number
+            if motion_files:
+                motion_files.sort(key=lambda x: x[0])  # Sort by frame number
+                return [path for _, path in motion_files], None
+            
+            # Otherwise, look for single base.png (current static system)
+            base_path = os.path.join(directory, "base.png")
+            if os.path.exists(base_path):
+                return [base_path], None  # Return as single-item list for consistency
+                
+        except Exception as e:
+            print(f"Error reading directory {directory}: {e}")
+            continue
+    
+    return None, f"No motion sequence or base image found for {character}/{direction}/{action} or normal."
+
 def find_base_image_path(character, direction, action):
-    """Finds the path to the mouthless base image for a character."""
-    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, action, "base.png")
-    if os.path.exists(path):
-        return path, None
-    path = os.path.join(CARTOON_IMAGE_BASE_PATH, character, direction, "normal", "base.png")
-    if os.path.exists(path):
-        return path, None
-    return None, f"No base image found for {character}/{direction}/{action} or normal."
+    """Legacy function - finds single base image (for backward compatibility)."""
+    motion_sequence, error = find_motion_sequence(character, direction, action)
+    if error:
+        return None, error
+    # Return just the first image for backward compatibility
+    return motion_sequence[0], None
 
 def find_mouth_shape_path(character, mouth_shape):
     """Finds the path to a specific mouth shape for a character."""
@@ -128,6 +173,31 @@ def find_mouth_shape_path(character, mouth_shape):
     if os.path.exists(path):
         return path, None
     return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
+
+def get_motion_sequence_for_scene(motion_paths, duration):
+    """
+    Generates a frame-by-frame list of motion image paths for a scene.
+    Cycles through the motion sequence at a comfortable pace.
+    """
+    total_frames = int(duration * FPS)
+    
+    if len(motion_paths) == 1:
+        # Static image - use the same image for all frames
+        return [motion_paths[0]] * total_frames
+    
+    # For motion sequences, cycle through at a reasonable pace
+    # Default: complete one motion cycle every 2 seconds (24 frames at 12 FPS)
+    motion_cycle_frames = max(24, len(motion_paths) * 2)  # At least 2 frames per motion image
+    
+    motion_sequence = []
+    for i in range(total_frames):
+        # Calculate which motion frame to use
+        cycle_position = i % motion_cycle_frames
+        motion_index = int((cycle_position / motion_cycle_frames) * len(motion_paths))
+        motion_index = min(motion_index, len(motion_paths) - 1)  # Ensure we don't exceed bounds
+        motion_sequence.append(motion_paths[motion_index])
+    
+    return motion_sequence
 
 def get_mouth_shapes_for_scene(audio_path, duration):
     """Analyzes an audio file and returns a frame-by-frame list of mouth shapes."""
@@ -158,45 +228,91 @@ def get_mouth_shapes_for_scene(audio_path, duration):
 
 # --- Single Scene Rendering Function ---
 def render_single_scene(line, audio_path, duration, scene_index, caption_override=None):
-    """Generates a single, self-contained video clip for one line of the script."""
+    """Generates a single, self-contained video clip for one line of the script with motion support."""
     temp_dir = tempfile.mkdtemp()
     try:
         char, action, direction_override, _, _ = cgm.parse_script_line(line)
         if not char: return None, "Could not parse line."
 
+        # Get mouth animation sequence
         mouth_shapes, error = get_mouth_shapes_for_scene(audio_path, duration)
         if error: return None, error
         
-        # For now, we assume the previous character is None to keep scenes independent
+        # Get motion sequence (new!)
         direction = direction_override or cgm.determine_logical_direction(char.lower(), None)
-        base_image_path, error = find_base_image_path(char, direction, action)
+        motion_paths, error = find_motion_sequence(char, direction, action)
         if error: return None, error
-
-        base_image_pil = Image.open(base_image_path).convert("RGB")
-        w, h = base_image_pil.size
-        if w % 2 != 0: w -= 1
-        if h % 2 != 0: h -= 1
-        base_image_pil = base_image_pil.crop((0, 0, w, h))
-        base_image_np = np.array(base_image_pil)
         
-        left_dot, right_dot = find_tracking_dots(base_image_np)
-        if not left_dot or not right_dot: return None, f"Tracking dots not found in {base_image_path}"
-
-        dx, dy = right_dot[0] - left_dot[0], right_dot[1] - left_dot[1]
-        scale = math.sqrt(dx**2 + dy**2) / REFERENCE_DOT_DISTANCE
-        angle = -math.degrees(math.atan2(dy, dx))
-        center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
+        # Generate motion sequence for this scene duration
+        motion_sequence = get_motion_sequence_for_scene(motion_paths, duration)
         
-        mouth_pils = {name: Image.open(find_mouth_shape_path(char, name)[0]).convert("RGBA") for name in set(mouth_shapes)}
+        # Pre-load all unique motion frames and find their tracking dots
+        motion_frames_data = {}
+        for motion_path in set(motion_sequence):  # Use set to avoid loading duplicates
+            motion_image_pil = Image.open(motion_path).convert("RGB")
+            w, h = motion_image_pil.size
+            if w % 2 != 0: w -= 1
+            if h % 2 != 0: h -= 1
+            motion_image_pil = motion_image_pil.crop((0, 0, w, h))
+            motion_image_np = np.array(motion_image_pil)
+            
+            # Find tracking dots for this motion frame
+            left_dot, right_dot = find_tracking_dots(motion_image_np)
+            if not left_dot or not right_dot: 
+                return None, f"Tracking dots not found in {motion_path}"
+            
+            # Calculate mouth positioning data for this motion frame
+            dx, dy = right_dot[0] - left_dot[0], right_dot[1] - left_dot[1]
+            scale = math.sqrt(dx**2 + dy**2) / REFERENCE_DOT_DISTANCE
+            angle = -math.degrees(math.atan2(dy, dx))
+            center = ((left_dot[0] + right_dot[0]) / 2, (left_dot[1] + right_dot[1]) / 2)
+            
+            motion_frames_data[motion_path] = {
+                'image_np': motion_image_np,
+                'scale': scale,
+                'angle': angle,
+                'center': center
+            }
+        
+        # Pre-load all mouth shapes
+        unique_mouth_shapes = set(mouth_shapes)
+        mouth_pils = {}
+        for mouth_shape in unique_mouth_shapes:
+            mouth_path, error = find_mouth_shape_path(char, mouth_shape)
+            if error: return None, error
+            mouth_pils[mouth_shape] = Image.open(mouth_path).convert("RGBA")
 
+        # Generate final frames with dual animation (motion + mouth)
         final_frames = []
-        for mouth_shape_name in mouth_shapes:
-            frame_pil = Image.fromarray(base_image_np)
-            mouth_pil = mouth_pils[mouth_shape_name]
-            transformed_mouth = mouth_pil.resize((int(mouth_pil.width * scale), int(mouth_pil.height * scale)), Image.Resampling.LANCZOS)
-            transformed_mouth = transformed_mouth.rotate(angle, expand=True, resample=Image.BICUBIC)
+        total_frames = len(mouth_shapes)
+        
+        for frame_index in range(total_frames):
+            # Get the motion frame for this time
+            current_motion_path = motion_sequence[frame_index]
+            motion_data = motion_frames_data[current_motion_path]
+            
+            # Get the mouth shape for this time
+            current_mouth_shape = mouth_shapes[frame_index]
+            
+            # Start with the motion frame
+            frame_pil = Image.fromarray(motion_data['image_np'])
+            
+            # Apply mouth overlay with positioning data from this motion frame
+            mouth_pil = mouth_pils[current_mouth_shape]
+            transformed_mouth = mouth_pil.resize(
+                (int(mouth_pil.width * motion_data['scale']), 
+                 int(mouth_pil.height * motion_data['scale'])), 
+                Image.Resampling.LANCZOS
+            )
+            transformed_mouth = transformed_mouth.rotate(
+                motion_data['angle'], expand=True, resample=Image.BICUBIC
+            )
+            
             mouth_w, mouth_h = transformed_mouth.size
-            paste_pos = (int(center[0] - mouth_w / 2), int(center[1] - mouth_h / 2))
+            paste_pos = (
+                int(motion_data['center'][0] - mouth_w / 2), 
+                int(motion_data['center'][1] - mouth_h / 2)
+            )
             frame_pil.paste(transformed_mouth, paste_pos, transformed_mouth)
             final_frames.append(np.array(frame_pil))
 

@@ -8,6 +8,7 @@ import streamlit as st
 import ui_sidebar
 import ui_comic_maker
 import ui_cartoon_maker
+import ui_frame_extractor
 
 # --- Session State Initialization ---
 # This block ensures all keys exist before any UI is rendered.
@@ -48,14 +49,17 @@ def main():
     # The sidebar is now simpler and only returns the admin status
     is_admin = ui_sidebar.display_sidebar()
 
-    # Create the two main tabs for the different workflows
-    comic_tab, cartoon_tab = st.tabs(["**Web Comic Maker**", "**Cartoon Maker**"])
+    # Create the main tabs for the different workflows
+    comic_tab, cartoon_tab, extractor_tab = st.tabs(["**Web Comic Maker**", "**Cartoon Maker**", "**Frame Extractor**"])
 
     with comic_tab:
         ui_comic_maker.display(is_admin)
 
     with cartoon_tab:
         ui_cartoon_maker.display(is_admin)
+    
+    with extractor_tab:
+        ui_frame_extractor.display()
 
 if __name__ == "__main__":
     main()
