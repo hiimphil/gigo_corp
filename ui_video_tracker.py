@@ -221,11 +221,11 @@ def display():
     **Revolutionary workflow:**
     1. Upload your AI-generated motion video
     2. Scrub to a clear frame where the mouth is visible
-    3. Click to place left and right mouth corner tracking dots
-    4. Preview tracking across the entire video
-    5. Export motion-ready frames with dots already placed!
+    3. **Click directly on the mouth** to place mouth overlay
+    4. Set keyframes at different head positions for motion tracking
+    5. Export motion-ready frames with interpolated tracking dots!
     
-    **Benefits:** 10x faster than manual frame editing, consistent tracking, zero human error.
+    **Benefits:** 100x faster than manual frame editing, realistic head movement tracking, zero human error.
     """)
     
     st.divider()
@@ -302,34 +302,78 @@ def display():
                         current_frame, mouth_center, mouth_scale, show_tracking_dots=True
                     )
                     
-                    # Display frame with instructions
-                    st.write("**🎯 Place mouth overlay to set tracking dots:**")
-                    st.image(display_frame, caption="Red mouth overlay shows tracking dot placement", use_container_width=True)
+                    # Display frame with click-to-place functionality
+                    st.write("**🎯 Click on the image to place mouth center:**")
+                    
+                    # Convert PIL image to bytes for click coordinates
+                    import io
+                    img_buffer = io.BytesIO()
+                    display_frame.save(img_buffer, format='PNG')
+                    img_bytes = img_buffer.getvalue()
+                    
+                    # Use streamlit-image-coordinates for click detection
+                    try:
+                        from streamlit_image_coordinates import streamlit_image_coordinates
+                        
+                        clicked_coords = streamlit_image_coordinates(
+                            img_bytes,
+                            key=f"image_click_{frame_time}",
+                            width=display_frame.width if display_frame.width <= 800 else 800
+                        )
+                        
+                        # If image was clicked, update mouth position
+                        if clicked_coords is not None:
+                            # Calculate scale factor if image was resized for display
+                            display_width = min(display_frame.width, 800)
+                            scale_factor = display_frame.width / display_width
+                            
+                            # Scale click coordinates back to original image size
+                            click_x = int(clicked_coords["x"] * scale_factor)
+                            click_y = int(clicked_coords["y"] * scale_factor)
+                            
+                            # Update mouth center
+                            st.session_state.temp_mouth_center = (click_x, click_y)
+                            mouth_center = (click_x, click_y)
+                            
+                            st.success(f"Mouth placed at ({click_x}, {click_y})")
+                            st.rerun()
+                    
+                    except ImportError:
+                        # Fallback to regular image if streamlit-image-coordinates not available
+                        st.image(display_frame, caption="Manual controls available below", use_container_width=True)
+                        st.warning("💡 **Click-to-place available!** Install for better UX: `pip install streamlit-image-coordinates`")
+                        st.info("Using manual controls below for now - still fully functional!")
                     
                     # Mouth placement controls
-                    st.write("**👄 Mouth Placement Controls:**")
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
+                        st.write("**👄 Fine-tune Position:**")
                         mouth_x = st.number_input(
-                            "Mouth Center X", 0, current_frame.width, 
-                            mouth_center[0], key=f"mouth_x_{frame_time}"
+                            "X", 0, current_frame.width, 
+                            mouth_center[0], key=f"mouth_x_{frame_time}",
+                            help="Click image or adjust manually"
                         )
                         mouth_y = st.number_input(
-                            "Mouth Center Y", 0, current_frame.height, 
-                            mouth_center[1], key=f"mouth_y_{frame_time}"
+                            "Y", 0, current_frame.height, 
+                            mouth_center[1], key=f"mouth_y_{frame_time}",
+                            help="Click image or adjust manually"
                         )
                     
                     with col2:
+                        st.write("**🔍 Scale:**")
                         mouth_scale = st.slider(
-                            "Mouth Scale", 0.5, 2.0, mouth_scale, 0.1,
+                            "Mouth Size", 0.5, 2.0, mouth_scale, 0.1,
                             key=f"mouth_scale_{frame_time}",
                             help="Adjust mouth size to fit character"
                         )
+                        
+                        # Show current position info
+                        st.info(f"Position: ({mouth_x}, {mouth_y})")
                     
                     with col3:
-                        st.write("**Keyframe Actions:**")
-                        if st.button("📌 Set Keyframe", use_container_width=True, help="Save mouth position at this time"):
+                        st.write("**📌 Keyframes:**")
+                        if st.button("Set Keyframe", use_container_width=True, help="Save mouth position at this time"):
                             # Remove existing keyframe at this time
                             st.session_state.mouth_keyframes = [
                                 kf for kf in st.session_state.mouth_keyframes 
@@ -342,10 +386,10 @@ def display():
                                 'mouth_center': (mouth_x, mouth_y),
                                 'mouth_scale': mouth_scale
                             })
-                            st.success(f"Keyframe set at {frame_time:.1f}s")
+                            st.success(f"✅ Keyframe set at {frame_time:.1f}s")
                             st.rerun()
                         
-                        if current_keyframe and st.button("🗑️ Remove Keyframe", use_container_width=True):
+                        if current_keyframe and st.button("Remove", use_container_width=True):
                             st.session_state.mouth_keyframes = [
                                 kf for kf in st.session_state.mouth_keyframes 
                                 if abs(kf['time'] - frame_time) >= 0.1
