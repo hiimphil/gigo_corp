@@ -10,6 +10,7 @@ import ui_comic_maker
 import ui_cartoon_maker
 import ui_frame_extractor
 import ui_video_tracker
+import ui_facial_detection
 
 # --- Session State Initialization ---
 # This block ensures all keys exist before any UI is rendered.
@@ -51,11 +52,12 @@ def main():
     is_admin = ui_sidebar.display_sidebar()
 
     # Create the main tabs for the different workflows
-    comic_tab, cartoon_tab, extractor_tab, tracker_tab = st.tabs([
+    comic_tab, cartoon_tab, extractor_tab, tracker_tab, facial_tab = st.tabs([
         "**Web Comic Maker**", 
         "**Cartoon Maker**", 
         "**Frame Extractor**", 
-        "**Video Tracker**"
+        "**Video Tracker**",
+        "**AI Facial Detection**"
     ])
 
     with comic_tab:
@@ -69,6 +71,9 @@ def main():
     
     with tracker_tab:
         ui_video_tracker.display()
+    
+    with facial_tab:
+        ui_facial_detection.display()
 
 if __name__ == "__main__":
     main()

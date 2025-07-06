@@ -9,6 +9,8 @@ import database_module
 import elevenlabs_module as tts_module
 import video_module
 from moviepy.editor import AudioFileClip # Import for getting duration
+from PIL import Image
+import numpy as np
 
 def _init_cartoon_keys():
     """A safeguard function to ensure all cartoon-related keys exist in session state."""
@@ -20,6 +22,106 @@ def _init_cartoon_keys():
     if 'final_cartoon_path' not in st.session_state: st.session_state.final_cartoon_path = None
     if 'background_audio' not in st.session_state: st.session_state.background_audio = None
     if 'caption_overrides' not in st.session_state: st.session_state.caption_overrides = {}  # New: caption text overrides per scene
+
+def preview_layer_composition(lines):
+    """Preview the 3-layer composition system for debugging."""
+    st.subheader("🎨 Layer Composition Preview")
+    st.write("Preview how Background + Character + Foreground layers combine.")
+    
+    if not lines:
+        st.warning("No script lines to preview")
+        return
+    
+    # Character selection for preview
+    characters = []
+    for line in lines:
+        try:
+            char, _, _, _, _ = comic_generator_module.parse_script_line(line)
+            if char and char.lower() not in characters:
+                characters.append(char.lower())
+        except:
+            continue
+    
+    if not characters:
+        st.warning("No valid characters found in script")
+        return
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        selected_char = st.selectbox("Character to preview:", characters, key="layer_preview_char")
+        
+        # Get location and direction for this character
+        location = video_module.get_character_location(selected_char)
+        direction = comic_generator_module.determine_logical_direction(selected_char, None)
+        
+        st.info(f"Location: {location}")
+        st.info(f"Direction: {direction}")
+    
+    with col2:
+        if st.button("🔍 Generate Layer Preview", use_container_width=True):
+            try:
+                # Load background
+                background_path, bg_error = video_module.find_background_path(selected_char, location)
+                if bg_error:
+                    st.error(f"Background: {bg_error}")
+                    return
+                
+                # Load character
+                character_paths, char_error = video_module.find_motion_sequence(selected_char, direction, "normal")
+                if char_error:
+                    st.error(f"Character: {char_error}")
+                    return
+                
+                # Load foreground (optional)
+                foreground_path, fg_error = video_module.find_foreground_path(selected_char, location)
+                
+                # Load images
+                background_img = Image.open(background_path).convert("RGB")
+                character_img = Image.open(character_paths[0]).convert("RGBA")
+                foreground_img = None
+                if foreground_path:
+                    foreground_img = Image.open(foreground_path).convert("RGBA")
+                
+                # Create composition
+                composite = video_module.create_layered_composition(
+                    background_img, character_img, foreground_img
+                )
+                
+                if composite:
+                    st.success("✅ Layer composition successful!")
+                    
+                    # Show individual layers and final result
+                    st.write("**Individual Layers:**")
+                    layer_cols = st.columns(4)
+                    
+                    with layer_cols[0]:
+                        st.write("Background")
+                        st.image(background_img, use_container_width=True)
+                    
+                    with layer_cols[1]:
+                        st.write("Character")
+                        st.image(character_img, use_container_width=True)
+                    
+                    with layer_cols[2]:
+                        if foreground_img:
+                            st.write("Foreground")
+                            st.image(foreground_img, use_container_width=True)
+                        else:
+                            st.write("No Foreground")
+                            st.info("Optional layer not found")
+                    
+                    with layer_cols[3]:
+                        st.write("**Final Composite**")
+                        st.image(composite, use_container_width=True)
+                    
+                    st.write("**Full Size Preview:**")
+                    st.image(composite, use_container_width=True)
+                else:
+                    st.error("Failed to create composition")
+                    
+            except Exception as e:
+                st.error(f"Preview error: {e}")
 
 def display(is_admin):
     """Renders the entire UI for the new Cartoon Maker workflow."""
@@ -114,7 +216,7 @@ def display_horizontal_storyboard(lines):
     st.subheader("🎭 Storyboard")
     
     # Global controls
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
     with col1:
         if st.button("🎤 Generate All Audio", use_container_width=True):
             generate_all_audio(lines)
@@ -124,6 +226,9 @@ def display_horizontal_storyboard(lines):
     with col3:
         if st.button("🎯 Assemble Final Cartoon", use_container_width=True):
             assemble_final_cartoon_ui(lines)
+    with col4:
+        if st.button("🎯 Video Tools", use_container_width=True):
+            st.info("AI Video Processing Tools - Coming Soon!")
     
     st.write("---")
     

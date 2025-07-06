@@ -174,6 +174,8 @@ def find_mouth_shape_path(character, mouth_shape):
         return path, None
     return None, f"Mouth shape '{mouth_shape}' not found for character '{character}'"
 
+# Removed background/foreground functions - focusing on AI video processing instead
+
 def get_motion_sequence_for_scene(motion_paths, duration):
     """
     Generates a frame-by-frame list of motion image paths for a scene.
@@ -246,6 +248,8 @@ def render_single_scene(line, audio_path, duration, scene_index, caption_overrid
         # Generate motion sequence for this scene duration
         motion_sequence = get_motion_sequence_for_scene(motion_paths, duration)
         
+        # Note: Now using AI-generated video frames directly (no background separation)
+        
         # Pre-load all unique motion frames and find their tracking dots
         motion_frames_data = {}
         for motion_path in set(motion_sequence):  # Use set to avoid loading duplicates
@@ -294,8 +298,8 @@ def render_single_scene(line, audio_path, duration, scene_index, caption_overrid
             # Get the mouth shape for this time
             current_mouth_shape = mouth_shapes[frame_index]
             
-            # Start with the motion frame
-            frame_pil = Image.fromarray(motion_data['image_np'])
+            # Start with the character motion frame
+            character_frame = Image.fromarray(motion_data['image_np'])
             
             # Apply mouth overlay with positioning data from this motion frame
             mouth_pil = mouth_pils[current_mouth_shape]
@@ -313,8 +317,10 @@ def render_single_scene(line, audio_path, duration, scene_index, caption_overrid
                 int(motion_data['center'][0] - mouth_w / 2), 
                 int(motion_data['center'][1] - mouth_h / 2)
             )
-            frame_pil.paste(transformed_mouth, paste_pos, transformed_mouth)
-            final_frames.append(np.array(frame_pil))
+            character_frame.paste(transformed_mouth, paste_pos, transformed_mouth)
+            
+            # Use the character frame directly (AI video with natural background intact)
+            final_frames.append(np.array(character_frame))
 
         if not final_frames:
             return None, "Failed to generate any frames for the scene."
