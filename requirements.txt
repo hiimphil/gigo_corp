@@ -15,3 +15,4 @@ mutagen>=1.45.1
 imageio-ffmpeg>=0.4.9
 elevenlabs>=1.0.0
 google-cloud-storage>=2.0.0
+streamlit-image-coordinates
