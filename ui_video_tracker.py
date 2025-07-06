@@ -15,8 +15,19 @@ def load_video_frame(video_path, frame_time):
     try:
         with VideoFileClip(video_path) as video:
             frame = video.get_frame(frame_time)
-            return Image.fromarray(frame.astype('uint8'))
+            # Ensure frame is valid numpy array
+            if frame is None:
+                return None
+            if not isinstance(frame, np.ndarray):
+                return None
+            # Convert to PIL Image
+            pil_image = Image.fromarray(frame.astype('uint8'))
+            # Validate the PIL image
+            if not hasattr(pil_image, 'save'):
+                return None
+            return pil_image
     except Exception as e:
+        print(f"Error loading video frame: {e}")
         return None
 
 def load_mouth_overlay():
@@ -329,41 +340,14 @@ def display():
                     # Display frame with click-to-place functionality
                     st.write("**🎯 Click on the image to place mouth center:**")
                     
-                    # Convert PIL image to bytes for click coordinates
-                    img_buffer = io.BytesIO()
-                    try:
-                        # Ensure display_frame is a valid PIL Image
-                        if display_frame is None:
-                            raise ValueError("display_frame is None")
-                        if not hasattr(display_frame, 'save'):
-                            raise ValueError(f"display_frame is not a PIL Image: {type(display_frame)}")
-                        
-                        # Convert to RGB if necessary (some formats may not support RGBA)
-                        if display_frame.mode not in ['RGB', 'RGBA']:
-                            display_frame = display_frame.convert('RGB')
-                        
-                        # Save to buffer
-                        display_frame.save(img_buffer, format='PNG')
-                        img_bytes = img_buffer.getvalue()
-                        
-                        # Validate the bytes
-                        if not img_bytes:
-                            raise ValueError("Generated image bytes are empty")
-                            
-                    except Exception as e:
-                        st.error(f"Error processing image for click detection: {e}")
-                        st.error(f"Display frame type: {type(display_frame)}")
-                        if hasattr(display_frame, 'mode'):
-                            st.error(f"Display frame mode: {display_frame.mode}")
-                        img_bytes = None
-                    
                     # Use streamlit-image-coordinates for click detection
-                    if img_bytes is not None:
+                    if display_frame is not None:
                         try:
                             from streamlit_image_coordinates import streamlit_image_coordinates
                             
+                            # Pass the PIL Image directly instead of bytes
                             clicked_coords = streamlit_image_coordinates(
-                                img_bytes,
+                                display_frame,
                                 key=f"image_click_{frame_time}",
                                 width=display_frame.width if display_frame.width <= 800 else 800
                             )
@@ -396,8 +380,8 @@ def display():
                             st.image(display_frame, caption="Click functionality error - using manual controls", use_container_width=True)
                             st.error(f"Click detection error: {e}")
                     else:
-                        # Image bytes failed, fall back to regular image
-                        st.image(display_frame, caption="Using manual controls below", use_container_width=True)
+                        # Display frame is None, fall back to error message
+                        st.error("Could not load video frame for tracking")
                     
                     # Mouth placement controls
                     col1, col2, col3 = st.columns(3)
