@@ -36,45 +36,55 @@ def load_mouth_overlay():
 
 def create_mouth_overlay(image, mouth_center=None, mouth_scale=1.0, show_tracking_dots=True):
     """Create image with mouth overlay and optional tracking dots."""
-    overlay_image = image.copy()
+    if image is None:
+        return None, None, None
     
-    if mouth_center:
-        mouth_img = load_mouth_overlay()
+    try:
+        overlay_image = image.copy()
         
-        # Scale mouth
-        if mouth_scale != 1.0:
-            new_size = (int(mouth_img.width * mouth_scale), int(mouth_img.height * mouth_scale))
-            mouth_img = mouth_img.resize(new_size, Image.Resampling.LANCZOS)
+        if mouth_center:
+            mouth_img = load_mouth_overlay()
+            if mouth_img is None:
+                return overlay_image, None, None
+            
+            # Scale mouth
+            if mouth_scale != 1.0:
+                new_size = (int(mouth_img.width * mouth_scale), int(mouth_img.height * mouth_scale))
+                mouth_img = mouth_img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Calculate mouth position
+            mouth_x = mouth_center[0] - mouth_img.width // 2
+            mouth_y = mouth_center[1] - mouth_img.height // 2
+            
+            # Paste mouth overlay with transparency
+            overlay_image.paste(mouth_img, (mouth_x, mouth_y), mouth_img)
+            
+            if show_tracking_dots:
+                # Calculate tracking dot positions based on mouth placement
+                left_dot = (mouth_x, mouth_center[1])  # Left edge of mouth
+                right_dot = (mouth_x + mouth_img.width, mouth_center[1])  # Right edge of mouth
+                
+                # Draw tracking dots
+                draw = ImageDraw.Draw(overlay_image)
+                dot_size = 8
+                
+                # Green dot for left
+                draw.ellipse([left_dot[0]-dot_size, left_dot[1]-dot_size, 
+                             left_dot[0]+dot_size, left_dot[1]+dot_size], 
+                            fill='lime', outline='darkgreen', width=2)
+                
+                # Blue dot for right
+                draw.ellipse([right_dot[0]-dot_size, right_dot[1]-dot_size, 
+                             right_dot[0]+dot_size, right_dot[1]+dot_size], 
+                            fill='blue', outline='darkblue', width=2)
+                
+                return overlay_image, left_dot, right_dot
         
-        # Calculate mouth position
-        mouth_x = mouth_center[0] - mouth_img.width // 2
-        mouth_y = mouth_center[1] - mouth_img.height // 2
+        return overlay_image, None, None
         
-        # Paste mouth overlay with transparency
-        overlay_image.paste(mouth_img, (mouth_x, mouth_y), mouth_img)
-        
-        if show_tracking_dots:
-            # Calculate tracking dot positions based on mouth placement
-            left_dot = (mouth_x, mouth_center[1])  # Left edge of mouth
-            right_dot = (mouth_x + mouth_img.width, mouth_center[1])  # Right edge of mouth
-            
-            # Draw tracking dots
-            draw = ImageDraw.Draw(overlay_image)
-            dot_size = 8
-            
-            # Green dot for left
-            draw.ellipse([left_dot[0]-dot_size, left_dot[1]-dot_size, 
-                         left_dot[0]+dot_size, left_dot[1]+dot_size], 
-                        fill='lime', outline='darkgreen', width=2)
-            
-            # Blue dot for right
-            draw.ellipse([right_dot[0]-dot_size, right_dot[1]-dot_size, 
-                         right_dot[0]+dot_size, right_dot[1]+dot_size], 
-                        fill='blue', outline='darkblue', width=2)
-            
-            return overlay_image, left_dot, right_dot
-    
-    return overlay_image, None, None
+    except Exception as e:
+        print(f"Error in create_mouth_overlay: {e}")
+        return None, None, None
 
 def interpolate_keyframes(keyframes, total_frames, fps):
     """Interpolate mouth positions between keyframes."""
@@ -298,51 +308,96 @@ def display():
                         mouth_scale = st.session_state.get('temp_mouth_scale', 1.0)
                     
                     # Create overlay image with mouth and tracking dots
-                    display_frame, left_dot, right_dot = create_mouth_overlay(
-                        current_frame, mouth_center, mouth_scale, show_tracking_dots=True
-                    )
+                    try:
+                        display_frame, left_dot, right_dot = create_mouth_overlay(
+                            current_frame, mouth_center, mouth_scale, show_tracking_dots=True
+                        )
+                        if display_frame is None:
+                            st.error("Failed to create mouth overlay")
+                            display_frame = current_frame.copy()
+                            left_dot = right_dot = None
+                        # Ensure display_frame is a valid PIL Image
+                        if not hasattr(display_frame, 'save'):
+                            st.error(f"create_mouth_overlay returned invalid type: {type(display_frame)}")
+                            display_frame = current_frame.copy()
+                            left_dot = right_dot = None
+                    except Exception as e:
+                        st.error(f"Error creating mouth overlay: {e}")
+                        display_frame = current_frame.copy()
+                        left_dot = right_dot = None
                     
                     # Display frame with click-to-place functionality
                     st.write("**🎯 Click on the image to place mouth center:**")
                     
                     # Convert PIL image to bytes for click coordinates
-                    import io
                     img_buffer = io.BytesIO()
-                    display_frame.save(img_buffer, format='PNG')
-                    img_bytes = img_buffer.getvalue()
+                    try:
+                        # Ensure display_frame is a valid PIL Image
+                        if display_frame is None:
+                            raise ValueError("display_frame is None")
+                        if not hasattr(display_frame, 'save'):
+                            raise ValueError(f"display_frame is not a PIL Image: {type(display_frame)}")
+                        
+                        # Convert to RGB if necessary (some formats may not support RGBA)
+                        if display_frame.mode not in ['RGB', 'RGBA']:
+                            display_frame = display_frame.convert('RGB')
+                        
+                        # Save to buffer
+                        display_frame.save(img_buffer, format='PNG')
+                        img_bytes = img_buffer.getvalue()
+                        
+                        # Validate the bytes
+                        if not img_bytes:
+                            raise ValueError("Generated image bytes are empty")
+                            
+                    except Exception as e:
+                        st.error(f"Error processing image for click detection: {e}")
+                        st.error(f"Display frame type: {type(display_frame)}")
+                        if hasattr(display_frame, 'mode'):
+                            st.error(f"Display frame mode: {display_frame.mode}")
+                        img_bytes = None
                     
                     # Use streamlit-image-coordinates for click detection
-                    try:
-                        from streamlit_image_coordinates import streamlit_image_coordinates
+                    if img_bytes is not None:
+                        try:
+                            from streamlit_image_coordinates import streamlit_image_coordinates
+                            
+                            clicked_coords = streamlit_image_coordinates(
+                                img_bytes,
+                                key=f"image_click_{frame_time}",
+                                width=display_frame.width if display_frame.width <= 800 else 800
+                            )
+                            
+                            # If image was clicked, update mouth position
+                            if clicked_coords is not None:
+                                # Calculate scale factor if image was resized for display
+                                display_width = min(display_frame.width, 800)
+                                scale_factor = display_frame.width / display_width
+                                
+                                # Scale click coordinates back to original image size
+                                click_x = int(clicked_coords["x"] * scale_factor)
+                                click_y = int(clicked_coords["y"] * scale_factor)
+                                
+                                # Update mouth center
+                                st.session_state.temp_mouth_center = (click_x, click_y)
+                                mouth_center = (click_x, click_y)
+                                
+                                st.success(f"Mouth placed at ({click_x}, {click_y})")
+                                st.rerun()
                         
-                        clicked_coords = streamlit_image_coordinates(
-                            img_bytes,
-                            key=f"image_click_{frame_time}",
-                            width=display_frame.width if display_frame.width <= 800 else 800
-                        )
+                        except ImportError:
+                            # Fallback to regular image if streamlit-image-coordinates not available
+                            st.image(display_frame, caption="Manual controls available below", use_container_width=True)
+                            st.warning("💡 **Click-to-place available!** Install for better UX: `pip install streamlit-image-coordinates`")
+                            st.info("Using manual controls below for now - still fully functional!")
                         
-                        # If image was clicked, update mouth position
-                        if clicked_coords is not None:
-                            # Calculate scale factor if image was resized for display
-                            display_width = min(display_frame.width, 800)
-                            scale_factor = display_frame.width / display_width
-                            
-                            # Scale click coordinates back to original image size
-                            click_x = int(clicked_coords["x"] * scale_factor)
-                            click_y = int(clicked_coords["y"] * scale_factor)
-                            
-                            # Update mouth center
-                            st.session_state.temp_mouth_center = (click_x, click_y)
-                            mouth_center = (click_x, click_y)
-                            
-                            st.success(f"Mouth placed at ({click_x}, {click_y})")
-                            st.rerun()
-                    
-                    except ImportError:
-                        # Fallback to regular image if streamlit-image-coordinates not available
-                        st.image(display_frame, caption="Manual controls available below", use_container_width=True)
-                        st.warning("💡 **Click-to-place available!** Install for better UX: `pip install streamlit-image-coordinates`")
-                        st.info("Using manual controls below for now - still fully functional!")
+                        except Exception as e:
+                            # Any other error with the click functionality
+                            st.image(display_frame, caption="Click functionality error - using manual controls", use_container_width=True)
+                            st.error(f"Click detection error: {e}")
+                    else:
+                        # Image bytes failed, fall back to regular image
+                        st.image(display_frame, caption="Using manual controls below", use_container_width=True)
                     
                     # Mouth placement controls
                     col1, col2, col3 = st.columns(3)
