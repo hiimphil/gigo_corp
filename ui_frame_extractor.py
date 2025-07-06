@@ -29,8 +29,8 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
             status_text = st.empty()
             
             extracted_files = []
-            frame_hashes = []
             previous_frame = None
+            previous_hash = None
             duplicates_removed = 0
             
             for i in range(total_frames):
@@ -43,15 +43,15 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
                 should_save = True
                 
                 if remove_duplicates and previous_frame is not None:
-                    # Calculate frame hash for quick duplicate detection
+                    # Quick hash comparison with immediate previous frame only
                     current_hash = calculate_frame_hash(frame)
                     
-                    # Check if this frame is very similar to the previous one
-                    if current_hash in frame_hashes:
+                    if current_hash == previous_hash:
+                        # Identical frames (hash match)
                         should_save = False
                         duplicates_removed += 1
                     else:
-                        # For more accurate comparison, use pixel difference
+                        # Different hashes, but check pixel-level similarity
                         prev_array = np.array(previous_frame.resize((64, 64)))
                         curr_array = np.array(frame_image.resize((64, 64)))
                         
@@ -62,8 +62,6 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
                         if similarity > similarity_threshold:
                             should_save = False
                             duplicates_removed += 1
-                        else:
-                            frame_hashes.append(current_hash)
                 
                 if should_save:
                     # Generate filename with sequential numbering for unique frames
@@ -75,9 +73,7 @@ def extract_frames_from_video(video_path, output_dir, frame_prefix="base", remov
                     frame_image.save(frame_path, "PNG")
                     extracted_files.append(frame_path)
                     previous_frame = frame_image
-                    
-                    if not remove_duplicates:
-                        frame_hashes.append(calculate_frame_hash(frame))
+                    previous_hash = calculate_frame_hash(frame)
                 
                 # Update progress
                 progress = (i + 1) / total_frames
