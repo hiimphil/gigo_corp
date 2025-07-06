@@ -45,7 +45,7 @@ def load_mouth_overlay():
         mouth_img = Image.new("RGBA", (40, 20), (255, 0, 0, 128))
         return mouth_img
 
-def create_mouth_overlay(image, mouth_center=None, mouth_scale=1.0, show_tracking_dots=True):
+def create_mouth_overlay(image, mouth_center=None, mouth_scale=1.0, mouth_rotation=0.0, show_tracking_dots=True):
     """Create image with mouth overlay and optional tracking dots."""
     if image is None:
         return None, None, None
@@ -63,7 +63,11 @@ def create_mouth_overlay(image, mouth_center=None, mouth_scale=1.0, show_trackin
                 new_size = (int(mouth_img.width * mouth_scale), int(mouth_img.height * mouth_scale))
                 mouth_img = mouth_img.resize(new_size, Image.Resampling.LANCZOS)
             
-            # Calculate mouth position
+            # Rotate mouth if rotation is specified
+            if mouth_rotation != 0.0:
+                mouth_img = mouth_img.rotate(mouth_rotation, expand=True, resample=Image.BICUBIC)
+            
+            # Calculate mouth position (center-based)
             mouth_x = mouth_center[0] - mouth_img.width // 2
             mouth_y = mouth_center[1] - mouth_img.height // 2
             
@@ -71,9 +75,27 @@ def create_mouth_overlay(image, mouth_center=None, mouth_scale=1.0, show_trackin
             overlay_image.paste(mouth_img, (mouth_x, mouth_y), mouth_img)
             
             if show_tracking_dots:
-                # Calculate tracking dot positions based on mouth placement
-                left_dot = (mouth_x, mouth_center[1])  # Left edge of mouth
-                right_dot = (mouth_x + mouth_img.width, mouth_center[1])  # Right edge of mouth
+                # Calculate tracking dot positions based on mouth placement and rotation
+                half_width = mouth_img.width // 2
+                
+                # Apply rotation to dot positions relative to mouth center
+                import math
+                angle_rad = math.radians(mouth_rotation)
+                
+                # Base positions (left and right of mouth center)
+                left_offset_x = -half_width * math.cos(angle_rad)
+                left_offset_y = -half_width * math.sin(angle_rad)
+                right_offset_x = half_width * math.cos(angle_rad)
+                right_offset_y = half_width * math.sin(angle_rad)
+                
+                left_dot = (
+                    int(mouth_center[0] + left_offset_x),
+                    int(mouth_center[1] + left_offset_y)
+                )
+                right_dot = (
+                    int(mouth_center[0] + right_offset_x),
+                    int(mouth_center[1] + right_offset_y)
+                )
                 
                 # Draw tracking dots
                 draw = ImageDraw.Draw(overlay_image)
@@ -134,18 +156,23 @@ def interpolate_keyframes(keyframes, total_frames, fps):
             # Interpolate scale
             scale = before_kf['mouth_scale'] + (after_kf['mouth_scale'] - before_kf['mouth_scale']) * time_progress
             
+            # Interpolate rotation
+            rotation = before_kf.get('mouth_rotation', 0.0) + (after_kf.get('mouth_rotation', 0.0) - before_kf.get('mouth_rotation', 0.0)) * time_progress
+            
         elif before_kf:
             # Use last keyframe
             mouth_center = before_kf['mouth_center']
             scale = before_kf['mouth_scale']
+            rotation = before_kf.get('mouth_rotation', 0.0)
         elif after_kf:
             # Use first keyframe
             mouth_center = after_kf['mouth_center']
             scale = after_kf['mouth_scale']
+            rotation = after_kf.get('mouth_rotation', 0.0)
         else:
             continue
         
-        # Calculate tracking dots from mouth placement
+        # Calculate tracking dots from mouth placement with rotation
         mouth_img = load_mouth_overlay()
         if scale != 1.0:
             mouth_img = mouth_img.resize(
@@ -153,14 +180,31 @@ def interpolate_keyframes(keyframes, total_frames, fps):
                 Image.Resampling.LANCZOS
             )
         
-        left_dot = (mouth_center[0] - mouth_img.width // 2, mouth_center[1])
-        right_dot = (mouth_center[0] + mouth_img.width // 2, mouth_center[1])
+        # Apply rotation to dot calculations
+        import math
+        half_width = mouth_img.width // 2
+        angle_rad = math.radians(rotation)
+        
+        left_offset_x = -half_width * math.cos(angle_rad)
+        left_offset_y = -half_width * math.sin(angle_rad)
+        right_offset_x = half_width * math.cos(angle_rad)
+        right_offset_y = half_width * math.sin(angle_rad)
+        
+        left_dot = (
+            int(mouth_center[0] + left_offset_x),
+            int(mouth_center[1] + left_offset_y)
+        )
+        right_dot = (
+            int(mouth_center[0] + right_offset_x),
+            int(mouth_center[1] + right_offset_y)
+        )
         
         tracking_data.append({
             'frame_number': frame_num,
             'time': frame_time,
             'mouth_center': mouth_center,
             'mouth_scale': scale,
+            'mouth_rotation': rotation,
             'left_dot': left_dot,
             'right_dot': right_dot
         })
@@ -314,14 +358,16 @@ def display():
                     if current_keyframe:
                         mouth_center = current_keyframe['mouth_center']
                         mouth_scale = current_keyframe['mouth_scale']
+                        mouth_rotation = current_keyframe.get('mouth_rotation', 0.0)
                     else:
                         mouth_center = st.session_state.get('temp_mouth_center', (current_frame.width//2, current_frame.height//2))
                         mouth_scale = st.session_state.get('temp_mouth_scale', 1.0)
+                        mouth_rotation = st.session_state.get('temp_mouth_rotation', 0.0)
                     
                     # Create overlay image with mouth and tracking dots
                     try:
                         display_frame, left_dot, right_dot = create_mouth_overlay(
-                            current_frame, mouth_center, mouth_scale, show_tracking_dots=True
+                            current_frame, mouth_center, mouth_scale, mouth_rotation, show_tracking_dots=True
                         )
                         if display_frame is None:
                             st.error("Failed to create mouth overlay")
@@ -360,12 +406,9 @@ def display():
                                     width=display_frame.width if display_frame.width <= 800 else 800
                                 )
                             except Exception as bytes_error:
-                                st.write(f"Bytes method failed: {bytes_error}")
-                                # Method 2: Try numpy array
+                                # Method 2: Try numpy array as fallback
                                 try:
                                     display_array = np.array(display_frame)
-                                    st.write(f"Trying numpy array: {type(display_array)}, shape: {display_array.shape}")
-                                    
                                     # Use a unique key that includes mouse position state
                                     click_key_array = f"image_click_{frame_time}_{mouth_center[0]}_{mouth_center[1]}_array"
                                     clicked_coords = streamlit_image_coordinates(
@@ -374,7 +417,7 @@ def display():
                                         width=display_frame.width if display_frame.width <= 800 else 800
                                     )
                                 except Exception as array_error:
-                                    st.error(f"Both methods failed - Bytes: {bytes_error}, Array: {array_error}")
+                                    # Fall back to manual controls only
                                     clicked_coords = None
                             
                             # If image was clicked, update mouth position
@@ -388,7 +431,6 @@ def display():
                                 current_click = (click_x_raw, click_y_raw)
                                 last_click = st.session_state.get(last_click_key, None)
                                 
-                                st.write(f"DEBUG: Current click: {current_click}, Last click: {last_click}")
                                 
                                 if last_click != current_click and current_click != (0, 0):
                                     # Calculate scale factor if image was resized for display
@@ -421,10 +463,10 @@ def display():
                         st.error("Could not load video frame for tracking")
                     
                     # Mouth placement controls
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        st.write("**👄 Fine-tune Position:**")
+                        st.write("**👄 Position:**")
                         mouth_x = st.number_input(
                             "X", 0, current_frame.width, 
                             mouth_center[0], key=f"mouth_x_{frame_time}",
@@ -439,15 +481,38 @@ def display():
                     with col2:
                         st.write("**🔍 Scale:**")
                         mouth_scale = st.slider(
-                            "Mouth Size", 0.5, 2.0, mouth_scale, 0.1,
+                            "Size", 0.5, 2.0, mouth_scale, 0.1,
                             key=f"mouth_scale_{frame_time}",
                             help="Adjust mouth size to fit character"
                         )
                         
                         # Show current position info
-                        st.info(f"Position: ({mouth_x}, {mouth_y})")
+                        st.info(f"Scale: {mouth_scale:.1f}x")
                     
                     with col3:
+                        st.write("**🔄 Rotation:**")
+                        mouth_rotation = st.slider(
+                            "Angle", -180.0, 180.0, mouth_rotation, 1.0,
+                            key=f"mouth_rotation_{frame_time}",
+                            help="Rotate mouth to match head angle",
+                            format="%.0f°"
+                        )
+                        
+                        # Show current angle info with visual indicator
+                        if mouth_rotation == 0:
+                            angle_indicator = "➡️"
+                        elif -45 <= mouth_rotation <= 45:
+                            angle_indicator = "↗️" if mouth_rotation > 0 else "↘️"
+                        elif 45 < mouth_rotation <= 135:
+                            angle_indicator = "⬆️"
+                        elif mouth_rotation > 135 or mouth_rotation < -135:
+                            angle_indicator = "⬅️"
+                        else:
+                            angle_indicator = "⬇️"
+                        
+                        st.info(f"{angle_indicator} {mouth_rotation:.0f}°")
+                    
+                    with col4:
                         st.write("**📌 Keyframes:**")
                         if st.button("Set Keyframe", use_container_width=True, help="Save mouth position at this time"):
                             # Remove existing keyframe at this time
@@ -460,7 +525,8 @@ def display():
                                 'time': frame_time,
                                 'frame_number': frame_number,
                                 'mouth_center': (mouth_x, mouth_y),
-                                'mouth_scale': mouth_scale
+                                'mouth_scale': mouth_scale,
+                                'mouth_rotation': mouth_rotation
                             })
                             st.success(f"✅ Keyframe set at {frame_time:.1f}s")
                             st.rerun()
@@ -476,6 +542,7 @@ def display():
                     # Update temporary positions
                     st.session_state.temp_mouth_center = (mouth_x, mouth_y)
                     st.session_state.temp_mouth_scale = mouth_scale
+                    st.session_state.temp_mouth_rotation = mouth_rotation
                     
                     # Show keyframes info
                     if st.session_state.mouth_keyframes:
