@@ -352,9 +352,11 @@ def display():
                                 display_frame.save(img_buffer, format='PNG')
                                 img_bytes = img_buffer.getvalue()
                                 
+                                # Use a unique key that includes mouse position state
+                                click_key = f"image_click_{frame_time}_{mouth_center[0]}_{mouth_center[1]}"
                                 clicked_coords = streamlit_image_coordinates(
                                     img_bytes,
-                                    key=f"image_click_{frame_time}",
+                                    key=click_key,
                                     width=display_frame.width if display_frame.width <= 800 else 800
                                 )
                             except Exception as bytes_error:
@@ -364,9 +366,11 @@ def display():
                                     display_array = np.array(display_frame)
                                     st.write(f"Trying numpy array: {type(display_array)}, shape: {display_array.shape}")
                                     
+                                    # Use a unique key that includes mouse position state
+                                    click_key_array = f"image_click_{frame_time}_{mouth_center[0]}_{mouth_center[1]}_array"
                                     clicked_coords = streamlit_image_coordinates(
                                         display_array,
-                                        key=f"image_click_{frame_time}_array",
+                                        key=click_key_array,
                                         width=display_frame.width if display_frame.width <= 800 else 800
                                     )
                                 except Exception as array_error:
@@ -375,20 +379,32 @@ def display():
                             
                             # If image was clicked, update mouth position
                             if clicked_coords is not None:
-                                # Calculate scale factor if image was resized for display
-                                display_width = min(display_frame.width, 800)
-                                scale_factor = display_frame.width / display_width
+                                # Get current click coordinates
+                                click_x_raw = clicked_coords.get("x", 0)
+                                click_y_raw = clicked_coords.get("y", 0)
                                 
-                                # Scale click coordinates back to original image size
-                                click_x = int(clicked_coords["x"] * scale_factor)
-                                click_y = int(clicked_coords["y"] * scale_factor)
+                                # Check if this is a new click (different from current position)
+                                last_click_key = f"last_click_{frame_time}"
+                                current_click = (click_x_raw, click_y_raw)
+                                last_click = st.session_state.get(last_click_key, None)
                                 
-                                # Update mouth center
-                                st.session_state.temp_mouth_center = (click_x, click_y)
-                                mouth_center = (click_x, click_y)
+                                st.write(f"DEBUG: Current click: {current_click}, Last click: {last_click}")
                                 
-                                st.success(f"Mouth placed at ({click_x}, {click_y})")
-                                st.rerun()
+                                if last_click != current_click and current_click != (0, 0):
+                                    # Calculate scale factor if image was resized for display
+                                    display_width = min(display_frame.width, 800)
+                                    scale_factor = display_frame.width / display_width
+                                    
+                                    # Scale click coordinates back to original image size
+                                    click_x = int(click_x_raw * scale_factor)
+                                    click_y = int(click_y_raw * scale_factor)
+                                    
+                                    # Update mouth center
+                                    st.session_state.temp_mouth_center = (click_x, click_y)
+                                    st.session_state[last_click_key] = current_click
+                                    
+                                    st.success(f"✅ Mouth placed at ({click_x}, {click_y})")
+                                    st.rerun()
                         
                         except ImportError:
                             # Fallback to regular image if streamlit-image-coordinates not available
