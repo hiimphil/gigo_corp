@@ -9,7 +9,7 @@ import os
 import zipfile
 import io
 from PIL import Image
-import facial_detection_module as fdm
+import simple_facial_detection as fdm
 
 def display():
     """Main UI for the facial detection tool."""
@@ -17,14 +17,16 @@ def display():
     st.subheader("Convert AI-generated videos into animation-ready assets")
     
     st.markdown("""
-    **Revolutionary AI Video Processing:**
+    **Smart AI Video Processing (Simplified):**
     1. Upload a 5-second AI-generated character video
-    2. **Auto-detect** face, mouth, and eye landmarks
+    2. **Auto-estimate** face, mouth, and eye regions using geometric analysis
     3. **Create blank canvas** by removing mouth/eyes with matching skin tone
-    4. **Generate tracking data** for precise animation overlay
+    4. **Generate tracking data** for animation overlay positioning
     5. **Export** processed frames + tracking data for cartoon generation
     
-    **Benefits:** 100% automated facial detection, perfect for AI-generated content, maintains natural background/lighting.
+    **Benefits:** Works on any platform, no external dependencies, optimized for AI-generated character videos.
+    
+    **Note:** This simplified version uses geometric estimation rather than AI detection for maximum compatibility.
     """)
     
     st.divider()
@@ -102,7 +104,7 @@ def display():
                 
                 # Process the video
                 with st.spinner("🧠 Analyzing facial features..."):
-                    blank_frames, tracking_data = fdm.process_ai_video(
+                    blank_frames, tracking_data = fdm.process_ai_video_simple(
                         temp_video_path, 
                         progress_callback=progress_callback
                     )
