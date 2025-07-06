@@ -345,13 +345,33 @@ def display():
                         try:
                             from streamlit_image_coordinates import streamlit_image_coordinates
                             
-                            # Convert PIL Image to numpy array for streamlit-image-coordinates
-                            display_array = np.array(display_frame)
-                            clicked_coords = streamlit_image_coordinates(
-                                display_array,
-                                key=f"image_click_{frame_time}",
-                                width=display_frame.width if display_frame.width <= 800 else 800
-                            )
+                            # Try multiple approaches for streamlit-image-coordinates
+                            # Method 1: Convert to bytes (most reliable)
+                            try:
+                                img_buffer = io.BytesIO()
+                                display_frame.save(img_buffer, format='PNG')
+                                img_bytes = img_buffer.getvalue()
+                                
+                                clicked_coords = streamlit_image_coordinates(
+                                    img_bytes,
+                                    key=f"image_click_{frame_time}",
+                                    width=display_frame.width if display_frame.width <= 800 else 800
+                                )
+                            except Exception as bytes_error:
+                                st.write(f"Bytes method failed: {bytes_error}")
+                                # Method 2: Try numpy array
+                                try:
+                                    display_array = np.array(display_frame)
+                                    st.write(f"Trying numpy array: {type(display_array)}, shape: {display_array.shape}")
+                                    
+                                    clicked_coords = streamlit_image_coordinates(
+                                        display_array,
+                                        key=f"image_click_{frame_time}_array",
+                                        width=display_frame.width if display_frame.width <= 800 else 800
+                                    )
+                                except Exception as array_error:
+                                    st.error(f"Both methods failed - Bytes: {bytes_error}, Array: {array_error}")
+                                    clicked_coords = None
                             
                             # If image was clicked, update mouth position
                             if clicked_coords is not None:
